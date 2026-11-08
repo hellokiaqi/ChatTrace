@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "account_id": "YOUR_ACCOUNT_ID",
+  "contact_id": "CONFIRMED_CONTACT_WECHAT_ID",
+  "source": "user-visible-manual-copy",
+  "captured_at": "2026-10-29T12:00:00+08:00",
+  "messages": [],
+  "screenshots": []
+}
