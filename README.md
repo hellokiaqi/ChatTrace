@@ -8,7 +8,7 @@ ChatTrace 将一个指定微信好友在 Windows 电脑上已有的聊天归档�
 
 1. 按 [安装与首次配置](docs/setup.md) 创建虚拟环境，确认好友身份，完成本地试读与 Drive 授权。
 2. 在项目目录执行 `.\run.ps1 update`，采集、构建并发布一次。
-3. 执行 `.\run.ps1 schedule install` 注册每天本地时间 04:00 的任务。暂停、恢复、查看结果和故障处理见 [运行手册](docs/operations.md)。
+3. 执行 `.\run.ps1 schedule install` 注册每天北京时间 04:00 的任务。暂停、恢复、查看结果和故障处理见 [运行手册](docs/operations.md)。
 
 | 入口 | 用途 |
 |---|---|
@@ -26,3 +26,5 @@ ChatTrace 将一个指定微信好友在 Windows 电脑上已有的聊天归档�
 `private/`、`config.json`、`oauth/`、`secrets/` 和 `.env` 属于部署数据。SQLite、消息、媒体、截图、密钥及真实测试材料均不随 Git 源码发布。本地明文归档依赖 Windows 账户及磁盘保护。启用语义分段时，所配置的模型供应商会收到聊天窗口原文。离线构建可使用 `build --no-llm`。
 
 微信适配器仅对已核实的客户端版本开放。它使用已登录用户权限读取账号密钥、联系人和消息快照。明文数据库在内存中查询。引用的上游源码、许可证和修改说明见 [第三方声明](chattrace/vendor/NOTICE.md)。
+
+本地阅读首页提供[聊天统计](docs/statistics.md)，可查看双方的消息、字数和活跃时段。

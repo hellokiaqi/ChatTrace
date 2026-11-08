@@ -206,7 +206,7 @@ class ArchiveTests(unittest.TestCase):
     def test_task_xml_and_error_privacy(self):
         root = ET.fromstring(task_xml(self.config))
         ns = {'t': 'http://schemas.microsoft.com/windows/2004/02/mit/task'}
-        self.assertTrue(root.find('.//t:StartBoundary', ns).text.endswith('T04:00:00'))
+        self.assertTrue(root.find('.//t:StartBoundary', ns).text.endswith('T04:00:00+08:00'))
         self.assertEqual(root.find('.//t:LogonType', ns).text, 'InteractiveToken')
         self.assertTrue(root.find('.//t:Arguments', ns).text.endswith(' update'))
         self.assertEqual(root.find('.//t:DaysInterval', ns).text,'1')

@@ -16,7 +16,7 @@ def main(argv=None):
     runner = commands.add_parser('run')
     runner.add_argument('--no-upload', action='store_true', help='提交本地归档但不联网上传')
     runner.add_argument('--backfill', action='store_true', help='补采目标好友全部本机消息，不受初始条数和时间窗口限制')
-    for name in ('doctor', 'init', 'auth', 'wechat-auth', 'status', 'pending', 'retrieval', 'update'):
+    for name in ('doctor', 'init', 'auth', 'wechat-auth', 'status', 'pending', 'retrieval', 'update','stats'):
         commands.add_parser(name)
     builder = commands.add_parser('build')
     mode = builder.add_mutually_exclusive_group()
@@ -97,7 +97,7 @@ def main(argv=None):
                 from .drive import credentials
                 credentials(config, interactive=True)
                 result = {'status': 'authorized'}
-            elif args.command in ('coverage', 'retrieval'):
+            elif args.command in ('coverage', 'retrieval','stats'):
                 from .core import Archive, exclusive
                 from .coverage import report
                 with exclusive(config['archive_root']):
@@ -105,6 +105,11 @@ def main(argv=None):
                     try:
                         if args.command == 'coverage':
                             result = report(archive)
+                        elif args.command == 'stats':
+                            from .statistics import statistics_page
+                            messages = (json.loads(row[0]) for row in archive.db.execute('SELECT payload FROM messages'))
+                            path = statistics_page(archive.root/'v4/human',messages)
+                            result = {'status':'generated','timezone':'Asia/Shanghai','path':str(path)}
                         else:
                             archive.materialize()
                             result = {'status': 'materialized', 'format': 'daily', 'index': str(archive.root / 'index.md')}

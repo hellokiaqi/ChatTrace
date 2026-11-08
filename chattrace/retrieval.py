@@ -72,7 +72,9 @@ def human(archive, root, rows,zone):
             parts.append('</article>')
         write(root/(month+'.html'),''.join(parts))
         index.append(f'<p><a href="{month}.html">{month}（{len(items)} 条）</a></p>')
-    write(root/'index.html',header+'<h1>聊天归档</h1>'+''.join(index))
+    from .statistics import statistics_page
+    statistics_page(root,rows)
+    write(root/'index.html',header+'<h1>聊天归档</h1><p><a href="statistics.html">双方聊天统计</a></p>'+''.join(index))
 
 
 def document(parts, number, lookup, zone, namespace, contact):

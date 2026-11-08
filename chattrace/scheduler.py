@@ -1,10 +1,10 @@
 import re
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from xml.sax.saxutils import escape
-from .core import ArchiveError, atomic
+from .core import ArchiveError, atomic, tz
 
 TASK_NAME = 'ChatTrace-Archive'
 
@@ -16,12 +16,15 @@ def task_xml(config, executable=None):
     executable = executable or sys.executable
     main = Path(__file__).resolve().parent.parent / 'main.py'
     arguments = subprocess.list2cmdline(['-X', 'utf8', str(main), '--config', config['config_path'], 'update'])
-    date = datetime.now().date().isoformat()
-    # Without an offset, Task Scheduler uses the Windows local timezone.
+    now = datetime.now(tz('Asia/Shanghai'))
+    hour, minute = map(int,time.split(':'))
+    start = now.replace(hour=hour,minute=minute,second=0,microsecond=0)
+    if start <= now:
+        start += timedelta(days=1)
     return f'''<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
 <RegistrationInfo><Description>ChatTrace private archive</Description></RegistrationInfo>
-<Triggers><CalendarTrigger><StartBoundary>{date}T{time}:00</StartBoundary><Enabled>true</Enabled><ScheduleByDay><DaysInterval>1</DaysInterval></ScheduleByDay></CalendarTrigger></Triggers>
+<Triggers><CalendarTrigger><StartBoundary>{start.isoformat()}</StartBoundary><Enabled>true</Enabled><ScheduleByDay><DaysInterval>1</DaysInterval></ScheduleByDay></CalendarTrigger></Triggers>
 <Principals><Principal id="Author"><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
 <Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><StartWhenAvailable>true</StartWhenAvailable><RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable><WakeToRun>true</WakeToRun><ExecutionTimeLimit>PT3H</ExecutionTimeLimit><RestartOnFailure><Interval>PT15M</Interval><Count>2</Count></RestartOnFailure></Settings>
 <Actions Context="Author"><Exec><Command>{escape(executable)}</Command><Arguments>{escape(arguments)}</Arguments><WorkingDirectory>{escape(str(main.parent))}</WorkingDirectory></Exec></Actions></Task>'''
@@ -36,7 +39,7 @@ def schedule(config, action):
         if config.get('live_acceptance_confirmed') is not True:
             raise ArchiveError('LIVE_ACCEPTANCE_REQUIRED')
         output = schedule(config, 'export')
-        args = ['/Create', '/TN', TASK_NAME, '/XML', output]
+        args = ['/Create', '/TN', TASK_NAME, '/XML', output, '/F']
     else:
         args = {'pause': ['/Change', '/TN', TASK_NAME, '/DISABLE'],
                 'resume': ['/Change', '/TN', TASK_NAME, '/ENABLE'],
