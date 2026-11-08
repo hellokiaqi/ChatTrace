@@ -107,8 +107,8 @@ def main(argv=None):
                             result = report(archive)
                         elif args.command == 'stats':
                             from .statistics import statistics_page
-                            messages = (json.loads(row[0]) for row in archive.db.execute('SELECT payload FROM messages'))
-                            path = statistics_page(archive.root/'v4/human',messages)
+                            from .retrieval import records
+                            path = statistics_page(archive.root/'v4/human',records(archive))
                             result = {'status':'generated','timezone':'Asia/Shanghai','path':str(path)}
                         else:
                             archive.materialize()

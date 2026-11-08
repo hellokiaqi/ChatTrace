@@ -10,6 +10,23 @@ from chattrace.statistics import statistics_page
 
 
 class StatisticsTests(unittest.TestCase):
+    def test_topic_continuations_new_blocks_and_stale_manifest(self):
+        from datetime import timezone
+        from chattrace.core import digest, encode
+        from chattrace.statistics import topic_times
+        messages=[dict(id=str(i),timestamp=f'2026-11-01T10:00:0{i}+00:00') for i in range(5)]
+        def part(block,topic,mid):
+            return dict(block_id=block,segment_id=topic,ids=[str(mid)])
+        manifest=dict(llm_ready=True,input_hash=digest(encode(messages).encode()),documents=[
+            dict(sessions=[part('a','one',0)]),
+            dict(sessions=[part('a','one',1),part('a','two',2),part('b','three',3),part('b','four',4)])])
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'manifest.json'
+            self.assertIsNone(topic_times(path,messages,timezone.utc))
+            path.write_text(json.dumps(manifest),'utf8')
+            self.assertEqual(topic_times(path,messages,timezone.utc),['2026-11-01T10:00:02','2026-11-01T10:00:04'])
+            self.assertIsNone(topic_times(path,messages[:-1],timezone.utc))
+
     def test_private_event_projection_and_beijing_midnight(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -46,5 +63,16 @@ assert.equal(slice.total,2);assert.equal(slice.friend.messages,0);assert.equal(s
 assert.equal(summarize(events,...bounds('month','2026-12-01')).total,0);
 assert.throws(()=>bounds('custom','','2026-11-03','2026-11-02'));
 assert.throws(()=>bounds('custom','','2026-11-02T15:05','2026-11-02T15:05:00'));
+const turns=[
+ ['2026-11-01T23:58:00','self',1],['2026-11-01T23:59:59','self',1],
+ ['2026-11-02T00:00:00','system',0],['2026-11-02T00:00:03','friend',1],
+ ['2026-11-02T00:00:03','self',1],['2026-11-02T01:30:03','friend',1],
+ ['2026-11-02T03:00:04','self',1]];
+const t=summarize(turns,...bounds('day','2026-11-02'),['2026-11-01T23:59:59','2026-11-02T00:00:03']);
+assert.equal(t.self.starts,1);assert.equal(t.friend.starts,0);assert.equal(t.openStart,0);
+assert.equal(t.self.turns,2);assert.equal(t.friend.turns,2);assert.equal(t.rounds,2);
+assert.equal(t.longest,2);
+assert.equal(t.self.replies,1);assert.equal(t.self.replySeconds,0);assert.equal(t.friend.replies,2);
+assert.equal(t.friend.replySeconds,5404);assert.equal(t.topics,1);
 """
         subprocess.run(['node','-'],input=script+assertions,text=True,check=True)

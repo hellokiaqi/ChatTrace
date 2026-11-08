@@ -10,6 +10,8 @@
 <label id="fromLabel" hidden>开始（含）<input id="from" type="datetime-local" step="1"></label>
 <label id="toLabel" hidden>结束（不含）<input id="to" type="datetime-local" step="1"></label></form>
 <p id="summary" aria-live="polite"></p><section id="results"><table><thead><tr><th>指标</th><th>我</th><th>好友</th></tr></thead><tbody id="metrics"></tbody></table>
+<h2>对话往返与话题</h2><p id="interaction"></p>
+<details><summary>这些指标怎么算？</summary><p>双方连续 90 分钟以上没有发言（严格大于 90 分钟），下一条算新一场。全库首场的发起人未知。同一人连发算一个回合；换人时，从对方最后一条算到本人第一条，归给接话者。每场第 2、4、6… 个回合各完成一次往返。系统消息跳过。</p><p>同一检索 Conversation Block 内进入另一个 Topic Segment，计一次话题转换。该项是语义分段估计。筛选按事件发生时刻归属，保留区间开始之前的上下文。</p></details>
 <h2>分时发言量</h2><div class="note">北京时间 00–23 时 · 绿色为我，棕色为好友</div><div id="chart" class="chart"></div><details><summary>查看每小时条数</summary><table><thead><tr><th>小时</th><th>我</th><th>好友</th></tr></thead><tbody id="hours"></tbody></table></details>
 <p id="other" class="note"></p><p class="note">字数按所发文字及引用回复正文的非空白 Unicode 码点计算，含标点；媒体占位与被引用文字不计。活跃分钟按实际发过消息的自然分钟去重。</p></section></main>
 <script id="logic">
@@ -30,14 +32,33 @@ function bounds(mode, date, from, to) {
   else end.setUTCDate(end.getUTCDate()+(mode==='week'?7:1));
   return [start,end].map(d=>d.toISOString().slice(0,10)+'T00:00:00');
 }
-function summarize(events, start, end) {
-  const person=()=>({messages:0,chars:0,days:new Set(),minutes:new Set(),hours:Array(24).fill(0),first:'',last:''});
-  const result={self:person(),friend:person(),system:0,unknown:0,total:0};
+function summarize(events, start, end, topicTimes=null) {
+  const person=()=>({messages:0,chars:0,days:new Set(),minutes:new Set(),hours:Array(24).fill(0),first:'',last:'',
+    starts:0,turns:0,replies:0,replySeconds:0});
+  const selected=time=>(!start || time>=start) && (!end || time<end);
+  const result={self:person(),friend:person(),system:0,unknown:0,total:0,rounds:0,longest:0,openStart:0,
+    topics:topicTimes===null?null:topicTimes.filter(selected).length};
+  let previousTime=null, previousRole=null, turnNumber=0, selectedRounds=0;
   for(const [time,role,chars] of events) {
-    if((start && time<start)||(end && time>=end)) continue;
-    result.total++;
-    if(role==='system'||role==='unknown'){result[role]++;continue;}
-    const p=result[role];p.messages++;p.chars+=chars;p.days.add(time.slice(0,10));p.minutes.add(time.slice(0,16));
+    if(end && time>=end) break;
+    const included=selected(time);
+    if(included) result.total++;
+    if(role==='system'||role==='unknown'){if(included) result[role]++;continue;}
+    const p=result[role], instant=Date.parse(time+'+08:00');
+    const gap=(instant-previousTime)/1000;
+    if(previousTime===null || gap>90*60){
+      turnNumber=1;selectedRounds=0;
+      if(included){p.turns++;if(previousTime===null) result.openStart++;else p.starts++;}
+    }else if(role!==previousRole){
+      turnNumber++;
+      if(included){
+        p.turns++;p.replies++;p.replySeconds+=gap;
+        if(turnNumber%2===0){result.rounds++;selectedRounds++;result.longest=Math.max(result.longest,selectedRounds);}
+      }
+    }
+    previousTime=instant;previousRole=role;
+    if(!included) continue;
+    p.messages++;p.chars+=chars;p.days.add(time.slice(0,10));p.minutes.add(time.slice(0,16));
     p.hours[Number(time.slice(11,13))]++;if(!p.first)p.first=time;p.last=time;
   }
   return result;
@@ -55,10 +76,15 @@ function draw(){
  el('fromLabel').hidden=el('toLabel').hidden=mode!=='custom';
  let range;try{range=bounds(mode,el('anchor').value,el('from').value,el('to').value);}catch(e){el('summary').textContent=e.message;el('results').hidden=true;return;}
  el('results').hidden=false;
- const r=summarize(data.events,...range), people=[r.self,r.friend];
+ const r=summarize(data.events,...range,data.topicTimes), people=[r.self,r.friend];
  el('summary').textContent=(mode==='all'?'全部有时间记录':range.map(t=>t.replace('T',' ')).join(' 至 ')+'（不含结束）')+' · 北京时间 · '+r.total+' 条';
  const table=el('metrics');table.replaceChildren();
  for(const [label,read] of [['消息条数',p=>p.messages],['字数',p=>p.chars],['发言天数',p=>p.days.size],['活跃分钟',p=>p.minutes.size],['发言高峰',peak],['首次发言',p=>p.first.replace('T',' ')||'—'],['末次发言',p=>p.last.replace('T',' ')||'—']])row(table,[label,...people.map(read)]);
+ row(table,['对话发起次数',...people.map(p=>p.starts)]);
+ row(table,['平均回复间隔',...people.map(p=>p.replies?(p.replySeconds/p.replies).toFixed(1)+' 秒（'+p.replies+' 次）':'—（0 次）')]);
+ row(table,['发言回合',...people.map(p=>p.turns)]);
+ el('interaction').textContent='完整往返 '+r.rounds+' 轮 · 单场最多 '+r.longest+' 轮 · 话题转换（估计）'+(r.topics===null?'暂无匹配的语义清单':r.topics+' 次')+
+   (r.openStart?'。首场缺少前序记录，未计发起人。':'。');
  el('other').textContent='所选范围内系统消息 '+r.system+' 条，未知发送者 '+r.unknown+' 条。全库另有 '+data.undated+' 条缺少时间戳。';
  const chart=el('chart'),hours=el('hours');chart.replaceChildren();hours.replaceChildren();const max=Math.max(1,...people.flatMap(p=>p.hours));
  for(let h=0;h<24;h++){const col=document.createElement('div'),bars=document.createElement('div');col.className='hour';bars.className='bars';col.append(bars);
