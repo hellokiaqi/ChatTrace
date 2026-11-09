@@ -9,6 +9,7 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
+from itertools import chain
 from pathlib import Path
 
 import zstandard
@@ -238,8 +239,13 @@ class MediaResolver:
             if cached.exists():
                 return [self.save_image(cached.read_bytes(), kind)], 'downloaded_verified'
             month = datetime.fromtimestamp(row['create_time'], tz(self.config['timezone'])).strftime('%Y-%m')
-            local = self.source.root / 'cache' / month / 'Emoticon' / md5[:2] / md5
-            if local.is_file():
+            cache_root = self.source.root / 'cache'
+            relative = Path('Emoticon') / md5[:2] / md5
+            preferred = cache_root / month / relative
+            alternatives = (p for p in cache_root.glob('*/' + relative.as_posix()) if p != preferred)
+            for local in chain((preferred,), alternatives):
+                if not local.is_file():
+                    continue
                 try:
                     data = decode_sticker_cache(local.read_bytes(), self.source.secret['cfg_dword'], self.source.account, md5)
                     asset = self.save_image(data, kind)

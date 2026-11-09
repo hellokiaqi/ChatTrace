@@ -46,3 +46,4 @@ Get-ChildItem (Join-Path $config.archive_root 'update-runs') -Filter '*.json' |
 ## 备份和迁移
 
 先暂停任务并等待当前进程退出，再备份整个 archive_root、inbox、本地配置和凭证。保留 SQLite、关联媒体、截图和 Drive 映射的一致副本。在新 Windows 用户下重新执行 OAuth 和微信身份授权。恢复后先 validate 与 sync --dry-run，再恢复任务。更换电脑还需更新任务的 Python 路径。用户自行处置标为 pending_retirement 的旧远端文件。
+补采历史表情时，程序优先查找消息所属月份的原件缓存。微信也会把重新同步的表情写入同步月份；此时按消息 MD5 在其他月份的同一原件路径查找，解码后核对 MD5 并验证图片格式。

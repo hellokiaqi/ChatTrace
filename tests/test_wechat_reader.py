@@ -68,6 +68,7 @@ class ReaderTests(unittest.TestCase):
             self.assertEqual(status, 'local_cache_verified')
             self.assertEqual(hashlib.md5((root / 'inbox' / assets[0]['path']).read_bytes()).hexdigest(), md5)
             self.assertEqual(resolver.resolve('sticker', row, xml), (assets, status))
+            self.assertEqual(resolver.resolve('sticker', {'create_time':1753989796}, xml), (assets, status))
             self.assertEqual(len(list((root / 'inbox/assets').iterdir())), 1)
             cache.write_bytes(encrypted[:-1])
             self.assertEqual(resolver.resolve('sticker', row, xml), ([], 'network_media_disabled'))
