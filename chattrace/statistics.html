@@ -10,16 +10,20 @@
 <label id="fromLabel" hidden>开始（含）<input id="from" type="datetime-local" step="1"></label>
 <label id="toLabel" hidden>结束（不含）<input id="to" type="datetime-local" step="1"></label></form>
 <p id="summary" aria-live="polite"></p><section id="results">
+<h2>发起归属</h2><label>判定口径<select id="basis"><option value="review">人工核验（默认）</option><option value="model">模型预估（人工优先）</option><option value="old">旧版：仅按 90 分钟</option></select></label>
+<table><thead><tr><th>超过 90 分钟的片段</th><th>我</th><th>好友</th></tr></thead><tbody id="attribution"></tbody></table>
+<details><summary>阈值敏感性分析</summary><p class="note">每格按“我 / 好友”排列，严格超过阈值才生成候选。修改核验结果会同时更新五行。</p><table><thead><tr><th>阈值</th><th>发起</th><th>延迟回复</th><th>不确定</th><th>旧口径发起</th><th>完整样本数</th><th>总往返轮数</th></tr></thead><tbody id="sensitivity"></tbody></table></details>
+<details><summary>逐条人工核验</summary><p>展开候选可检查上下文、引用和模型理由。选择判定立即预览。下载修改后，在项目目录执行 <code>.\run.ps1 review-starts "下载的文件路径"</code>，刷新本页即可读取保存的核验结果。</p><div id="reviews"></div><button type="button" id="saveReviews">下载核验修改</button><span id="reviewStatus"></span></details>
 <h2>谁开场后聊得更久</h2><label>长聊门槛<select id="long"><option>3</option><option selected>5</option><option>10</option><option>20</option></select>轮及以上</label>
 <table><thead><tr><th>按发起人比较</th><th>我发起</th><th>好友发起</th></tr></thead><tbody id="lengths"></tbody></table>
-<p class="note">按开场时间筛选，跨日仍计整场。首场发起人未知，末场未观察到下一场；两场均排除。零轮场次保留。</p>
+<p class="note">按开场时间筛选。语义口径只比较以新发起开头、由下一次明确新发起闭合的整场；延迟回复并回前段，不确定边界两侧不推定完整长度。首末截断场次排除，零轮保留。</p>
 <details><summary>逐场核对</summary><table><thead><tr><th>发起人</th><th>开始</th><th>末次发言</th><th>往返轮数</th></tr></thead><tbody id="sessions"></tbody></table></details>
 <h2>回复间隔分布</h2><table><thead><tr><th>接话人及范围</th><th>次数</th><th>P25</th><th>中位数</th><th>P75</th><th>P90</th></tr></thead><tbody id="delays"></tbody></table>
 <p class="note">同场接话从上一人的最后一条算到新发言人的第一条。超过 90 分钟的换人间隔单列；分位数采用线性插值。</p>
 <h2>谁引入话题，对方有没有接下去</h2><table><thead><tr><th>按话题首位发言人</th><th>我引入</th><th>好友引入</th></tr></thead><tbody id="topicCounts"></tbody></table>
 <p class="note">按检索话题段的首位参与者归属；首段排除，续卷合并。接续表示对方随后在同段发过消息，含表情。持续接续要求对方有两个分开的发言回合。按话题开始时间筛选，末段统计至当前快照。</p>
 <h2>发言与活跃时间</h2><table><thead><tr><th>指标</th><th>我</th><th>好友</th></tr></thead><tbody id="metrics"></tbody></table>
-<h2>对话往返与话题</h2><p id="interaction"></p>
+<h2>时间分段下的往返与话题</h2><p id="interaction"></p>
 <details><summary>这些指标怎么算？</summary><p>双方连续 90 分钟以上没有发言（严格大于 90 分钟），下一条算新一场。全库首场的发起人未知。同一人连发算一个回合；换人时，从对方最后一条算到本人第一条，归给接话者。每场第 2、4、6… 个回合各完成一次往返。系统消息跳过。</p><p>同一检索 Conversation Block 内进入另一个 Topic Segment，计一次话题转换。该项是语义分段估计。筛选按事件发生时刻归属，保留区间开始之前的上下文。</p></details>
 <h2>分时发言量</h2><div class="note">北京时间 00–23 时 · 绿色为我，棕色为好友</div><div id="chart" class="chart"></div><details><summary>查看每小时条数</summary><table><thead><tr><th>小时</th><th>我</th><th>好友</th></tr></thead><tbody id="hours"></tbody></table></details>
 <p id="other" class="note"></p><p class="note">字数按所发文字及引用回复正文的非空白 Unicode 码点计算，含标点；媒体占位与被引用文字不计。活跃分钟按实际发过消息的自然分钟去重。</p></section></main>
@@ -45,6 +49,30 @@ function quantile(values,p){
   if(!values.length)return null;
   const sorted=[...values].sort((a,b)=>a-b), i=(sorted.length-1)*p, low=Math.floor(i);
   return sorted[low]+(sorted[Math.ceil(i)]-sorted[low])*(i-low);
+}
+function attribution(events, boundaries, start, end, hours, basis){
+  const byTime=new Map(boundaries.map(b=>[b.time,b]));
+  const person=()=>({new:0,delayed:0,uncertain:0,pending:0,old:0,scenes:[]});
+  const out={self:person(),friend:person()};
+  let prev=null,prevRole=null,scene=null,turns=0;
+  for(const [time,role] of events){
+    if(role!=='self' && role!=='friend')continue;
+    const instant=Date.parse(time+'+08:00'), selected=(!start||start<=time)&&(!end||time<end);
+    if(prev!==null && instant-prev>hours*3600000){
+      const b=byTime.get(time);
+      const label=basis==='old'?'new':(b?.review || (basis==='model'?b?.suggestion?.label:null) || 'uncertain');
+      if(selected){out[role][label]++;out[role].old++;if(!b?.review)out[role].pending++;}
+      if(label!=='delayed'){
+        if(label==='new' && scene)out[scene.role].scenes.push({...scene,rounds:Math.floor(turns/2)});
+        scene=label==='new' && selected?{start:time,role}:null;
+        turns=0;prevRole=null;
+      }
+    }
+    if(role!==prevRole)turns++;
+    if(scene)scene.end=time;
+    prev=instant;prevRole=role;
+  }
+  return out;
 }
 function summarize(events, start, end, topicTimes=null, topicActivity=null) {
   const person=()=>({messages:0,chars:0,days:new Set(),minutes:new Set(),hours:Array(24).fill(0),first:'',last:'',
@@ -84,6 +112,30 @@ function summarize(events, start, end, topicTimes=null, topicActivity=null) {
 <script>
 const data=/*STATS_DATA*/null;
 const el=id=>document.getElementById(id);
+const labels={new:'新发起',delayed:'延迟回复 / 续接',uncertain:'不确定'};
+const originalReviews=new Map(data.boundaries.map(b=>[b.id,b.review]));
+function reviewList(range){
+ const box=el('reviews');box.replaceChildren();
+ for(const b of data.boundaries.filter(b=>(!range[0]||b.time>=range[0])&&(!range[1]||b.time<range[1]))){
+  const item=document.createElement('details'),heading=document.createElement('summary');
+  heading.textContent=b.time.replace('T',' ')+' · '+(b.role==='self'?'我':'好友')+' · '+b.id+' · '+(labels[b.review]||'待核');item.append(heading);
+  const info=document.createElement('p');info.textContent='间隔 '+(b.gap/3600).toFixed(2)+' 小时。模型建议：'+(labels[b.suggestion?.label]||'未生成')+'。'+(b.suggestion?.reason||'')+' '+(b.suggestion?.evidence||[]).join('、');item.append(info);
+  for(const [title,rows] of [['前文',b.context.before],['候选及后文',b.context.after],['显式引用目标',b.context.referenced?[b.context.referenced]:[]]]){
+   if(!rows.length)continue;const titleNode=document.createElement('b');titleNode.textContent=title;item.append(titleNode);
+   for(const m of rows){const line=document.createElement('div'),a=document.createElement('a');a.href=m.time.slice(0,7)+'.html#'+encodeURIComponent(m.id);a.textContent=m.id;line.append(a,' '+m.time+' '+(m.role==='self'?'我':'好友')+' '+(m.text||'['+m.kind+']')+(m.quote?'（引用：'+m.quote+'）':''));item.append(line);}
+  }
+  const picker=document.createElement('select');picker.setAttribute('aria-label','核验 '+b.id);
+  for(const [k,name] of [['','待核'],...Object.entries(labels)])picker.add(new Option(name,k));
+  picker.value=b.review||'';picker.onchange=()=>{b.review=picker.value||null;draw();};item.append(picker);box.append(item);
+ }
+ const count=data.boundaries.filter(b=>b.review!==originalReviews.get(b.id)).length;
+ el('saveReviews').disabled=!count;el('reviewStatus').textContent=count?' 有 '+count+' 项尚未写入归档':'';
+}
+el('saveReviews').onclick=()=>{
+ const reviews=Object.fromEntries(data.boundaries.filter(b=>b.review!==originalReviews.get(b.id)).map(b=>[b.id,{fingerprint:b.fingerprint,label:b.review}]));
+ const url=URL.createObjectURL(new Blob([JSON.stringify({schema:1,reviews},null,2)],{type:'application/json'})),a=document.createElement('a');
+ a.href=url;a.download='chattrace-start-reviews.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+};
 const latest=data.events.at(-1)?.[0]?.slice(0,10) || new Date(Date.now()+8*3600000).toISOString().slice(0,10);
 el('anchor').value=latest;el('from').value=(data.events[0]?.[0]?.slice(0,10)||latest)+'T00:00:00';el('to').value=bounds('day',latest)[1];
 function row(target,values){const tr=target.insertRow();for(const val of values)tr.insertCell().textContent=val;}
@@ -94,15 +146,20 @@ function draw(){
  let range;try{range=bounds(mode,el('anchor').value,el('from').value,el('to').value);}catch(e){el('summary').textContent=e.message;el('results').hidden=true;return;}
  el('results').hidden=false;
  const r=summarize(data.events,...range,data.topicTimes,data.topicActivity), people=[r.self,r.friend];
+ const basis=el('basis').value,base=attribution(data.events,data.boundaries,...range,1.5,basis);
+ const picked=[base.self,base.friend],attr=el('attribution'),sensitive=el('sensitivity');attr.replaceChildren();sensitive.replaceChildren();
+ for(const [label,key] of [['发起','new'],['延迟回复 / 续接','delayed'],['不确定（人工口径含待核）','uncertain'],['尚未人工核验','pending'],['旧版发起','old']])row(attr,[label,...picked.map(p=>p[key])]);
+ for(const h of [1.5,3,6,12,24]){const t=attribution(data.events,data.boundaries,...range,h,basis),pair=[t.self,t.friend];row(sensitive,[h===1.5?'90 分钟':h+' 小时',...['new','delayed','uncertain','old'].map(k=>pair.map(p=>p[k]).join(' / ')),pair.map(p=>p.scenes.length).join(' / '),pair.map(p=>p.scenes.reduce((n,s)=>n+s.rounds,0)).join(' / ')]);}
+ reviewList(range);
  const lengths=el('lengths'),sessions=el('sessions'),delays=el('delays'),topicCounts=el('topicCounts');
  for(const table of [lengths,sessions,delays,topicCounts])table.replaceChildren();
- const rounds=people.map(p=>p.scenes.map(s=>s.rounds)),limit=Number(el('long').value);
+ const rounds=picked.map(p=>p.scenes.map(s=>s.rounds)),limit=Number(el('long').value);
  const rate=(n,d)=>d?n+'/'+d+'（'+(100*n/d).toFixed(1)+'%）':'—（0 个样本）';
  for(const [name,read] of [['已结束场次',a=>a.length],['总往返轮数',a=>a.reduce((s,v)=>s+v,0)],
    ['平均每场',a=>a.length?(a.reduce((s,v)=>s+v,0)/a.length).toFixed(1):'—'],['中位数',a=>quantile(a,.5)??'—'],
    ['最长',a=>a.length?Math.max(...a):'—'],['长聊占比（≥'+limit+' 轮）',a=>rate(a.filter(n=>n>=limit).length,a.length)]])
    row(lengths,[name,...rounds.map(read)]);
- for(const s of [...r.self.scenes,...r.friend.scenes].sort((a,b)=>a.start.localeCompare(b.start)))row(sessions,[s.role==='self'?'我':'好友',s.start.replace('T',' '),s.end.replace('T',' '),s.rounds]);
+ for(const s of [...base.self.scenes,...base.friend.scenes].sort((a,b)=>a.start.localeCompare(b.start)))row(sessions,[s.role==='self'?'我':'好友',s.start.replace('T',' '),s.end.replace('T',' '),s.rounds]);
  for(const [k,name] of [['self','我'],['friend','好友']])for(const [kind,label] of [['short','同场接话'],['paused','停顿后换人']]){
    const a=r[k][kind];row(delays,[name+' · '+label,a.length,...[.25,.5,.75,.9].map(p=>{
      const v=quantile(a,p);return v===null?'—':v>=3600?(v/3600).toFixed(2)+' 小时':v.toFixed(1)+' 秒';})]);}
@@ -113,7 +170,7 @@ function draw(){
  el('summary').textContent=(mode==='all'?'全部有时间记录':range.map(t=>t.replace('T',' ')).join(' 至 ')+'（不含结束）')+' · 北京时间 · '+r.total+' 条';
  const table=el('metrics');table.replaceChildren();
  for(const [label,read] of [['消息条数',p=>p.messages],['字数',p=>p.chars],['发言天数',p=>p.days.size],['活跃分钟',p=>p.minutes.size],['发言高峰',peak],['首次发言',p=>p.first.replace('T',' ')||'—'],['末次发言',p=>p.last.replace('T',' ')||'—']])row(table,[label,...people.map(read)]);
- row(table,['对话发起次数',...people.map(p=>p.starts)]);
+ row(table,['发起次数（当前口径）',...picked.map(p=>p.new)]);
  row(table,['平均回复间隔',...people.map(p=>p.replies?(p.replySeconds/p.replies).toFixed(1)+' 秒（'+p.replies+' 次）':'—（0 次）')]);
  row(table,['发言回合',...people.map(p=>p.turns)]);
  el('interaction').textContent='完整往返 '+r.rounds+' 轮 · 单场最多 '+r.longest+' 轮 · 话题转换（估计）'+(r.topics===null?'暂无匹配的语义清单':r.topics+' 次')+
@@ -124,5 +181,5 @@ function draw(){
  for(const p of people){const bar=document.createElement('i');bar.style.height=(100*p.hours[h]/max)+'%';bars.append(bar);}
  col.append(String(h));col.title=h+' 时：我 '+r.self.hours[h]+' 条，好友 '+r.friend.hours[h]+' 条';chart.append(col);row(hours,[h+' 时',...people.map(p=>p.hours[h])]);}
 }
-el('long').addEventListener('change',draw);document.querySelector('form').addEventListener('input',draw);document.querySelector('form').addEventListener('submit',e=>e.preventDefault());draw();
+el('basis').addEventListener('change',draw);el('long').addEventListener('change',draw);document.querySelector('form').addEventListener('input',draw);document.querySelector('form').addEventListener('submit',e=>e.preventDefault());draw();
 </script></html>

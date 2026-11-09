@@ -44,7 +44,8 @@ def topic_activity(path, messages, zone):
     return {'changes':changes,'topics':[t for t in topics[1:] if t['role']]}
 
 
-def statistics_page(root, messages):
+def statistics_page(root, messages, enabled=None):
+    from .start_review import classify
     zone = tz('Asia/Shanghai')
     events = []
     undated = 0
@@ -63,8 +64,11 @@ def statistics_page(root, messages):
     events.sort(key=lambda event:event[0])
     template = Path(__file__).with_name('statistics.html').read_text('utf-8')
     activity = topic_activity(root.parent/'retrieval/manifest.json',messages,zone)
-    data = json.dumps({'events':events,'undated':undated,'topicTimes':activity['changes'] if activity else None,'topicActivity':activity['topics'] if activity else None},separators=(',',':'))
-    body = template.replace('/*STATS_DATA*/null',data).encode()
+    payload = {'events':events,'undated':undated,'topicTimes':activity['changes'] if activity else None,
+               'topicActivity':activity['topics'] if activity else None}
+    payload['boundaries'] = classify(root.parent,messages,enabled)
+    safe_json = json.dumps(payload,separators=(',',':')).replace('<','\\u003c')
+    body = template.replace('/*STATS_DATA*/null',safe_json).encode()
     path = root/'statistics.html'
     if not path.exists() or path.read_bytes()!=body:
         atomic(path,body)

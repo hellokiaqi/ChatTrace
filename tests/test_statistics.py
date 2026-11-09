@@ -91,5 +91,19 @@ assert.equal(jan1.self.scenes.length,0);assert.equal(jan1.friend.paused.length,1
 const jan2=summarize(sample,...bounds('day','2026-01-02'));
 assert.equal(jan2.self.scenes[0].rounds,0);assert.equal(jan2.friend.scenes.length,0);
 assert.equal(jan2.self.paused.length,0);assert.deepEqual(jan2.friend.short,[30]);
+const boundaries=[
+ {time:sample[1][0],review:'new',suggestion:{label:'delayed'}},
+ {time:sample[5][0],review:'delayed'},
+ {time:sample[6][0],review:'new'}];
+const merged=attribution(sample,boundaries,'','',1.5,'model');
+assert.equal(merged.friend.new,2);assert.equal(merged.self.delayed,1);
+assert.equal(merged.friend.scenes[0].end,sample[5][0]);assert.equal(merged.friend.scenes[0].rounds,2);
+assert.equal(attribution(sample,boundaries,...bounds('day','2026-01-01'),1.5,'review').friend.scenes[0].rounds,2);
+boundaries[1].review=null;
+const pending=attribution(sample,boundaries,'','',1.5,'review');
+assert.equal(pending.self.uncertain,1);assert.equal(pending.friend.scenes.length,0);
+assert.equal(attribution(sample,boundaries,'','',6,'review').self.uncertain,0);
+const old=attribution(sample,boundaries,'','',1.5,'old');
+assert.deepEqual(old.friend.scenes.map(x=>x.rounds),jan1.friend.scenes.map(x=>x.rounds));
 """
         subprocess.run(['node','-'],input=script+assertions,text=True,check=True)
