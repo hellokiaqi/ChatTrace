@@ -13,8 +13,8 @@ class StatisticsTests(unittest.TestCase):
     def test_topic_continuations_new_blocks_and_stale_manifest(self):
         from datetime import timezone
         from chattrace.core import digest, encode
-        from chattrace.statistics import topic_times
-        messages=[dict(id=str(i),timestamp=f'2026-11-01T10:00:0{i}+00:00') for i in range(5)]
+        from chattrace.statistics import topic_activity
+        messages=[dict(id=str(i),sender='self' if i%2==0 else 'friend',timestamp=f'2026-11-01T10:00:0{i}+00:00') for i in range(5)]
         def part(block,topic,mid):
             return dict(block_id=block,segment_id=topic,ids=[str(mid)])
         manifest=dict(llm_ready=True,input_hash=digest(encode(messages).encode()),documents=[
@@ -22,10 +22,16 @@ class StatisticsTests(unittest.TestCase):
             dict(sessions=[part('a','one',1),part('a','two',2),part('b','three',3),part('b','four',4)])])
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)/'manifest.json'
-            self.assertIsNone(topic_times(path,messages,timezone.utc))
+            self.assertIsNone(topic_activity(path,messages,timezone.utc))
             path.write_text(json.dumps(manifest),'utf8')
-            self.assertEqual(topic_times(path,messages,timezone.utc),['2026-11-01T10:00:02','2026-11-01T10:00:04'])
-            self.assertIsNone(topic_times(path,messages[:-1],timezone.utc))
+            self.assertEqual(topic_activity(path,messages,timezone.utc)['changes'],['2026-11-01T10:00:02','2026-11-01T10:00:04'])
+            self.assertEqual(len(topic_activity(path,messages,timezone.utc)['topics']),3)
+            manifest['documents']=[dict(sessions=[part('a','first',0),dict(block_id='a',segment_id='next',ids=['1','2'])]),
+                                   dict(sessions=[dict(block_id='a',segment_id='next',ids=['3','4'])])]
+            path.write_text(json.dumps(manifest),'utf8')
+            self.assertEqual(topic_activity(path,messages,timezone.utc)['topics'],
+                             [dict(time='2026-11-01T10:00:01',role='friend',otherTurns=2,switch=True)])
+            self.assertIsNone(topic_activity(path,messages[:-1],timezone.utc))
 
     def test_private_event_projection_and_beijing_midnight(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -74,5 +80,16 @@ assert.equal(t.self.turns,2);assert.equal(t.friend.turns,2);assert.equal(t.round
 assert.equal(t.longest,2);
 assert.equal(t.self.replies,1);assert.equal(t.self.replySeconds,0);assert.equal(t.friend.replies,2);
 assert.equal(t.friend.replySeconds,5404);assert.equal(t.topics,1);
+assert.equal(quantile([], .5),null);assert.equal(quantile([8],.9),8);assert.equal(quantile([0,10],.25),2.5);
+const sample=[
+ ['2026-01-01T09:00:00','self',1],['2026-01-01T23:59:00','friend',1],
+ ['2026-01-02T00:01:00','self',1],['2026-01-02T00:01:30','friend',1],['2026-01-02T00:02:00','self',1],
+ ['2026-01-02T03:00:00','self',1],['2026-01-02T06:00:00','friend',1]];
+const jan1=summarize(sample,...bounds('day','2026-01-01'));
+assert.equal(jan1.friend.scenes.length,1);assert.equal(jan1.friend.scenes[0].rounds,2);
+assert.equal(jan1.self.scenes.length,0);assert.equal(jan1.friend.paused.length,1);
+const jan2=summarize(sample,...bounds('day','2026-01-02'));
+assert.equal(jan2.self.scenes[0].rounds,0);assert.equal(jan2.friend.scenes.length,0);
+assert.equal(jan2.self.paused.length,0);assert.deepEqual(jan2.friend.short,[30]);
 """
         subprocess.run(['node','-'],input=script+assertions,text=True,check=True)
