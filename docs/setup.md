@@ -39,4 +39,4 @@ wechat-auth 使用项目的只读账号适配器获取本地密钥，写入当�
 
 复制 `.env.example` 为 `.env`。配置启用标志、OpenAI-compatible URL、模型名和密钥，或将 CHATTRACE_LLM_ENABLED 设为 false 使用本地规则。所有模型字段仅用于检索导航。
 
-执行 `.\run.ps1 update` 后查看本地阅读入口以及云端 01_Retrieval。确认部署结果后，在配置中将 `live_acceptance_confirmed` 设为 true，选择 `schedule_time`（默认北京时间 04:00），执行 `.\run.ps1 schedule install`。
+执行 `.\run.ps1 update` 后查看本地阅读入口以及云端 01_Retrieval_Markdown。确认部署结果后，在配置中将 `live_acceptance_confirmed` 设为 true，选择 `schedule_time`（默认北京时间 04:00），执行 `.\run.ps1 schedule install`。

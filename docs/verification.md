@@ -18,9 +18,9 @@
 2. 打开 Google Drive 正式检索目录的 01_CATALOG。检查链接指向本账号的正式文档；在原始聊天区核对时间、发送者、消息 ID 和原文。
 3. 再执行一次 update。在来源未改变时，运行记录中的 changed_documents 应为 0。更新已登记的文档应保持原文件 ID。
 4. 运行 schedule run，从 Get-ScheduledTaskInfo 检查 LastTaskResult、LastRunTime、NextRunTime，并核对 update-runs 的 ended、status 和 stage。
-5. 在 ChatGPT 或 Gemini 中调用 Drive，用一句实际原话、一个日期和一条消息 ID 分别检索。按 Google Docs 原始聊天区核对引用。
+5. 在 ChatGPT 或 Gemini 中调用 Drive，用一句实际原话、一个日期和一条消息 ID 分别检索。按 Markdown 文件 原始聊天区核对引用。
 
-初始版在 Windows 当前用户的真实计划任务和手动命令入口均完成过正式更新。核对方式包含原生 Docs 文本导出、归档消息块逐条匹配及重复运行跳过写入。实际生产数据、文件 ID 和部署日志仅保存在用户本机。系统睡眠时能否按时唤醒、锁屏截图、手机或备份历史完整性需在对应设备上单独验证。
+初始版在 Windows 当前用户的真实计划任务和手动命令入口均完成过正式更新。核对方式包含Markdown 原始字节下载、归档消息块逐条匹配及重复运行跳过写入。实际生产数据、文件 ID 和部署日志仅保存在用户本机。系统睡眠时能否按时唤醒、锁屏截图、手机或备份历史完整性需在对应设备上单独验证。
 
 ## 源码发布范围
 

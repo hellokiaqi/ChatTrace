@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import tempfile
+from urllib.parse import quote
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -13,7 +14,10 @@ from .core import ArchiveError, atomic, digest, encode, tz
 from .semantic import Semantic, PROMPT
 from .topics import topics
 
-START="""ChatTrace 正式检索入口
+START="""# ChatTrace 正式检索入口
+
+[打开检索目录](01_CATALOG.md)
+
 先查 01_CATALOG，按时间或话题打开所列正式 Retrieval 文档。每卷可跨日期并包含多个 Topic Segment。标题、关键词及描述用于导航；回答时读取 [原始聊天]，引用时间、发送者与稳定消息 ID，并按需展开相邻上下文。
 正式检索的原文来源仅限目录所列正文。Human Archive 和分析记录用于其他用途。检索未命中时报告未找到；已导入消息的导出数量与微信全历史覆盖分别核验。无法确认的事项请明确标注。"""
 def write(path, data):
@@ -87,7 +91,7 @@ def document(parts, number, lookup, zone, namespace, contact):
     dates = [r['date'].replace('-','') for r in (first,last)]
     name = f'CT-R-{dates[0]}-{dates[1]}-{number:02}｜{caption}'
     words = list(dict.fromkeys(w for i in range(6) for s in parts for w in s['meta']['keywords'][i:i+1]))[:8]
-    return dict(key=f"CT-R-{namespace}-{first['id']}",name=name,filename=name+'.txt',namespace=namespace,
+    return dict(key=f"CT-R-{namespace}-{first['id']}",name=name,filename=name+'.md',namespace=namespace,
                 contact=contact,anchor=first['id'],start=stamp(first,zone),end=stamp(last,zone),
                 ids=ids,sessions=list(parts),keywords=words)
 
@@ -95,11 +99,11 @@ def document(parts, number, lookup, zone, namespace, contact):
 def render(doc, lookup, zone):
     ids = doc['ids']
     titles = list(dict.fromkeys(s['meta']['title'] for s in doc['sessions']))
-    lines = [doc['name'],'','[文档信息]',f"文档ID：{doc['key']}",f"namespace：{doc['namespace']}",
+    lines = ['# '+doc['name'],'','## 文档信息','',f"文档ID：{doc['key']}",f"namespace：{doc['namespace']}",
              '来源：ChatTrace / WeChat',f"参与者：我、{doc['contact']}",f"起止时间：{doc['start']} — {doc['end']}",
              f'消息数量：{len(ids)}',f'首条消息：{ids[0]}',f'末条消息：{ids[-1]}',
-             '覆盖状态：本卷覆盖已导入范围；微信全历史未验证。','','[文档级检索关键词]',
-             '关键词：'+'、'.join(doc['keywords']),'主要话题：'+'；'.join(titles),'','[话题导航]']
+             '覆盖状态：本卷覆盖已导入范围；微信全历史未验证。','','## 文档级检索关键词','',
+             '关键词：'+'、'.join(doc['keywords']),'主要话题：'+'；'.join(titles),'','## 话题导航','']
     body = []
     for i,s in enumerate(doc['sessions'],1):
         meta = s['meta']
@@ -109,9 +113,11 @@ def render(doc, lookup, zone):
                       f"时间范围：{stamp(lookup[first],zone)} — {stamp(lookup[last],zone)}",
                       f'消息 ID：{first} — {last}', '关键词：'+'、'.join(meta['keywords']),
                       '简短描述：'+meta['description'],''])
-        body.append(f'## Topic Segment {i:02} · {tag}')
-        body.extend(block(lookup[mid],zone,doc['namespace']) for mid in s['ids'])
-    return '\n'.join(lines)+'\n[原始聊天]\n\n'+'\n\n'.join(body)+'\n'
+        body.append(f'### Topic Segment {i:02} · {tag}')
+        original = '\n\n'.join(block(lookup[mid],zone,doc['namespace']) for mid in s['ids'])
+        fence = '`' * max(3,1+max((len(run) for run in re.findall(r'`+',original)),default=0))
+        body.append(fence+'text\n'+original+'\n'+fence)
+    return '\n'.join(lines)+'\n## 原始聊天\n\n'+'\n\n'.join(body)+'\n'
 
 
 def pack(segments, lookup, zone, namespace, contact, soft, hard):
@@ -170,12 +176,12 @@ def pack(segments, lookup, zone, namespace, contact, soft, hard):
 
 
 def catalog(docs, remote):
-    entries = ['ChatTrace 正式检索目录｜已导入消息；微信历史覆盖未验证']
+    entries = ['# ChatTrace 正式检索目录｜已导入消息；微信历史覆盖未验证']
     for d in docs:
         titles = list(dict.fromkeys(s['meta']['title'] for s in d['sessions']))
-        entries.append('\n'.join([d['name'],d['key'],f"{d['start']} — {d['end']} · {len(d['ids'])} 条 · {d['ids'][0]} — {d['ids'][-1]}",
+        entries.append('\n'.join(['## '+d['name'],'',d['key'],f"{d['start']} — {d['end']} · {len(d['ids'])} 条 · {d['ids'][0]} — {d['ids'][-1]}",
                                   '主要话题：'+'；'.join(titles),'关键词：'+'、'.join(d['keywords']),
-                                  remote.get(d['key'],d['filename']),'覆盖：已导入范围']))
+                                  '[打开正文]('+remote.get(d['key'],quote(d['filename']))+')','覆盖：已导入范围']))
     return '\n\n'.join(entries)+'\n'
 
 
@@ -203,7 +209,7 @@ def inspect_view(archive, folder):
             if s['block_id'] != active_block and s['block_id'] != 'B-'+first:
                 raise ArchiveError('V4_BLOCK_MISMATCH')
             active_block, previous_topic = s['block_id'], s['segment_id']
-    names = {'01_CATALOG.txt','00_START_HERE.txt'}
+    names = {'01_CATALOG.md','00_START_HERE.md'}
     for n,d in enumerate(docs,1):
         expected = document(d['sessions'],n,lookup,manifest['zone'],manifest['namespace'],archive.config['contact_name'])
         if any(d[k]!=v for k,v in expected.items()):
@@ -213,7 +219,7 @@ def inspect_view(archive, folder):
         body = render(d,lookup,manifest['zone'])
         if raw!=body.encode() or len(body)!=d['chars'] or len(body)>manifest['hard_limit'] or d['sha256']!=digest(raw):
             raise ArchiveError('V4_DOCUMENT_MISMATCH')
-    if {p.name for p in folder.glob('*.txt')}!=names or (folder/'01_CATALOG.txt').read_bytes()!=catalog(docs,{}).encode() or (folder/'00_START_HERE.txt').read_bytes()!=START.encode():
+    if {p.name for p in folder.glob('*.md')}!=names or (folder/'01_CATALOG.md').read_bytes()!=catalog(docs,{}).encode() or (folder/'00_START_HERE.md').read_bytes()!=START.encode():
         raise ArchiveError('V4_NAVIGATION_MISMATCH')
     if any(not (archive.root/a['path']).is_file() for r in rows for a in r['media']):
         raise ArchiveError('V4_MISSING_ASSET')
@@ -282,8 +288,8 @@ def build(archive, enabled=None, refresh=False, preview=False):
                         input_hash=digest(encode(rows).encode()),model=sem.model,llm_ready=sem.ready,
                         prompt_hash=digest(PROMPT.encode()),documents=docs,
                         navigation_hash=digest(encode([START,catalog(docs,{})]).encode()))
-        write(stage/'01_CATALOG.txt',catalog(docs,{}))
-        write(stage/'00_START_HERE.txt',START)
+        write(stage/'01_CATALOG.md',catalog(docs,{}))
+        write(stage/'00_START_HERE.md',START)
         write(stage/'manifest.json',encode(manifest))
         result = inspect_view(archive,stage)
         target = location(archive,True)

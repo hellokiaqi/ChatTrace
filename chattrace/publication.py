@@ -1,45 +1,41 @@
 """One-shot publication of validated v4 documents through the existing Drive client."""
 import io
-import re
+import hashlib
 import json
 from .core import ArchiveError, atomic, digest, encode, now
 from .drive import GoogleDrive
-from .retrieval import START,catalog,validate,records,block
+from .retrieval import START,catalog,validate
 
-MIME='application/vnd.google-apps.document'
-
-def docs_paragraphs(text):
-    return re.sub(r'\n{2,}', lambda match: '\n' * (2 * len(match.group()) - 1), text)
+MIME='text/markdown'
 
 def sync(archive,dry=False,drive_factory=GoogleDrive):
     validate(archive)
     root=archive.root/'v4'
     manifest=json.loads((root/'retrieval/manifest.json').read_bytes())
     docs=manifest['documents']
-    lookup={m['id']:m for m in records(archive)}
-    memberships={d['key']:d['ids'] for d in docs}
-    path=root/'drive-state.json'
+    path=root/'markdown-drive-state.json'
     state=json.loads(path.read_bytes()) if path.exists() else {}
-    urls={k:'https://docs.google.com/document/d/'+v['id']+'/edit' for k,v in state.items()}
+    urls={k:'https://drive.google.com/file/d/'+v['id']+'/view' for k,v in state.items()}
     active={d['key'] for d in docs}|{'00_START_HERE','01_CATALOG'}
     retired=sorted(set(state)-active)
-    entries=[(d['key'],d['name'],(root/'retrieval'/d['filename']).read_bytes().decode()) for d in docs]
-    entries.append(('00_START_HERE','00_START_HERE',START))
+    entries=[(d['key'],d['filename'],(root/'retrieval'/d['filename']).read_bytes().decode()) for d in docs]
     drive=None if dry else drive_factory(archive.config,archive)
-    folder=None if dry else drive.folder('@v4/retrieval','01_Retrieval',drive.contact_root)
+    folder=None if dry else drive.folder('@v4/markdown','01_Retrieval_Markdown',drive.contact_root)
     if drive and drive.api.files().get(fileId=folder,fields='shared').execute().get('shared'):
         raise ArchiveError('V4_FOLDER_SHARED')
     plan=[]
-    for key,name,body in entries+[('01_CATALOG','01_CATALOG','')]:
+    for key,name,body in entries+[('01_CATALOG','01_CATALOG.md',''),('00_START_HERE','00_START_HERE.md',START)]:
         if key=='01_CATALOG':
             body=catalog(docs,urls)
+        elif key=='00_START_HERE' and '01_CATALOG' in urls:
+            body=START.replace('(01_CATALOG.md)','('+urls['01_CATALOG']+')')
         sha=digest(body.encode())
         row=state.get(key,{})
         action='create' if not row else 'skip' if row.get('sha256')==sha and row.get('name')==name else 'update'
         plan.append([key,action])
         if dry:
             continue
-        marker=digest(encode([manifest['namespace'],key]).encode())
+        marker=digest(encode([manifest['namespace'],'markdown',key]).encode())
         api=drive.api.files()
         remote=row.get('id')
         if not remote:
@@ -48,26 +44,21 @@ def sync(archive,dry=False,drive_factory=GoogleDrive):
                 raise ArchiveError('V4_DUPLICATE_REMOTE_ID')
             remote=found[0]['id'] if found else None
         if remote:
-            meta=api.get(fileId=remote,fields='parents,appProperties,trashed,shared,mimeType,name').execute()
+            meta=api.get(fileId=remote,fields='parents,appProperties,trashed,shared,mimeType,name,md5Checksum').execute()
             if meta.get('trashed') or meta.get('shared') or folder not in meta['parents'] or meta['mimeType']!=MIME or meta.get('appProperties',{}).get('chatTraceV4')!=marker:
                 raise ArchiveError('V4_REMOTE_IDENTITY_MISMATCH')
-            if action=='skip' and meta['name']==name:
+            if action=='skip' and meta['name']==name and meta.get('md5Checksum')==hashlib.md5(body.encode()).hexdigest():
                 continue
-        upload=drive.media(io.BytesIO(body.encode()),mimetype='text/plain')
+        if remote and action=='skip':
+            plan[-1][1]='update'
+        upload=drive.media(io.BytesIO(body.encode()),mimetype=MIME)
         if remote:
             api.update(fileId=remote,body={'name':name,'mimeType':MIME},media_body=upload).execute()
         else:
             remote=api.create(body={'name':name,'mimeType':MIME,'parents':[folder],'appProperties':{'chatTraceV4':marker}},media_body=upload,fields='id').execute()['id']
-        actual=api.export(fileId=remote,mimeType='text/plain').execute().decode('utf-8-sig').replace('\r\n','\n')
-        expected=body.replace('\r\n','\n')
-        transport = docs_paragraphs(expected.removesuffix('\n'))
-        if actual not in (expected,expected+'\n',transport,transport+'\n'):
-            raise ArchiveError('V4_NATIVE_CONTENT_MISMATCH')
-        for mid in memberships.get(key, []):
-            original=block(lookup[mid],manifest['zone'],manifest['namespace']).replace('\r\n','\n')
-            if original not in actual and docs_paragraphs(original) not in actual:
-                raise ArchiveError('V4_NATIVE_MESSAGE_MISMATCH')
+        if api.get_media(fileId=remote).execute()!=body.encode():
+            raise ArchiveError('MARKDOWN_CONTENT_MISMATCH')
         state[key]={'id':remote,'sha256':sha,'name':name,'verified_at':now()}
         atomic(path,encode(state).encode())
-        urls[key]='https://docs.google.com/document/d/'+remote+'/edit'
+        urls[key]='https://drive.google.com/file/d/'+remote+'/view'
     return {'status':'dry_run' if dry else 'synced','plan':plan,'pending_retirement':retired,'folder':'https://drive.google.com/drive/folders/'+folder if folder else None}

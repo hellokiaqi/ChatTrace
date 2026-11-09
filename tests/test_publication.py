@@ -82,22 +82,26 @@ class ViewTests(unittest.TestCase):
             uploads[remote] = (body, media_body)
             return MagicMock(execute=lambda: {'id': remote})
         files.create.side_effect = create
-        files.export.return_value.execute.return_value = b'corrupted'
-        with self.assertRaisesRegex(ArchiveError, 'V4_NATIVE_CONTENT_MISMATCH'):
+        files.get_media.return_value.execute.return_value = b'corrupted'
+        with self.assertRaisesRegex(ArchiveError, 'MARKDOWN_CONTENT_MISMATCH'):
             sync(archive, drive_factory=lambda *_: drive)
-        self.assertFalse((archive.root/'v4/drive-state.json').exists())
+        self.assertFalse((archive.root/'v4/markdown-drive-state.json').exists())
         def search(q, fields):
             matches = [{'id': key} for key, (body, _) in uploads.items()
                        if body['appProperties']['chatTraceV4'] in q]
             return MagicMock(execute=lambda: {'files': matches})
         files.list.side_effect = search
         files.get.side_effect = lambda fileId, **kw: MagicMock(execute=lambda:
-            {'shared': False} if fileId == 'folder' else uploads[fileId][0])
-        files.export.side_effect = lambda fileId, **kw: MagicMock(execute=lambda:
-            uploads[fileId][1].removesuffix('\n').replace('\n\n','\n\n\n').encode())
+            {'shared': False} if fileId == 'folder' else {**uploads[fileId][0],'md5Checksum':__import__('hashlib').md5(uploads[fileId][1].encode()).hexdigest()})
+        files.get_media.side_effect = lambda fileId, **kw: MagicMock(execute=lambda:
+            uploads[fileId][1].encode())
         result = sync(archive, drive_factory=lambda *_: drive)
         self.assertEqual(result['status'], 'synced')
         self.assertEqual(len(uploads), 3)
+        for metadata, body in uploads.values():
+            self.assertTrue(metadata['name'].endswith('.md'))
+            self.assertEqual(metadata['mimeType'],'text/markdown')
+            self.assertTrue(body.startswith('# '))
         again = sync(archive, drive_factory=lambda *_: drive)
         self.assertTrue(all(action == 'skip' for _, action in again['plan']))
         self.assertEqual(files.update.call_count, 1)
@@ -128,7 +132,7 @@ class ViewTests(unittest.TestCase):
         build(archive,False)
         with patch('chattrace.retrieval.START','New navigation instructions'):
             build(archive,False)
-            self.assertEqual((archive.root/'v4/retrieval/00_START_HERE.txt').read_text('utf-8'),
+            self.assertEqual((archive.root/'v4/retrieval/00_START_HERE.md').read_text('utf-8'),
                              'New navigation instructions')
 
     def test_model_validation_retry_and_cache(self):

@@ -7,9 +7,9 @@
 1. 核对微信账号与好友身份，读取包含已提交 WAL 的只读快照。首次按配置试读，之后按时间水位和重叠窗口读取。消息 ID 用于去重，解析修订保存在 SQLite。
 2. 提交本地批次、生成每日文件、校验资源。若开启 `upload_enabled`，同时同步每日归档与媒体上传队列。
 3. 从 SQLite 构建阅读页面及检索正文，逐条验证 ID、时间、顺序与原文，再发布本地文档。
-4. 将正式正文、00_START_HERE 和 01_CATALOG 同步到 Drive 的 01_Retrieval。上传后导出 Docs 回读校验，成功后保存远端 ID 和摘要。目录使用已知文档链接。重复执行时跳过相同内容。
+4. 将正式正文、00_START_HERE 和 01_CATALOG 同步到 Drive 的 01_Retrieval_Markdown。上传后下载 Markdown 原始字节校验，成功后保存远端 ID 和摘要。目录使用已知文档链接。重复执行时跳过相同内容。
 
-默认的云端发布范围是正式检索 Google Docs。月度 HTML、原始媒体和连续截图属于本地档案。`upload_enabled` 专门控制额外的每日 Markdown、JSONL、Manifest、媒体和截图文件队列；`update` 与 `sync` 总会执行正式检索文档发布。`run --no-upload` 只做采集。提取媒体与截图覆盖分别计数，manual 截图策略允许保留没有截图的纯文本消息。
+默认的云端发布范围是正式检索 Markdown 文件。月度 HTML、原始媒体和连续截图属于本地档案。`upload_enabled` 专门控制额外的每日 Markdown、JSONL、Manifest、媒体和截图文件队列；`update` 与 `sync` 总会执行正式检索文档发布。`run --no-upload` 只做采集。提取媒体与截图覆盖分别计数，manual 截图策略允许保留没有截图的纯文本消息。
 
 ## 定时任务
 
@@ -35,7 +35,7 @@ Get-ChildItem (Join-Path $config.archive_root 'update-runs') -Filter '*.json' |
     Sort-Object LastWriteTime -Descending | Select-Object -First 1 | Get-Content
 ```
 
-退出码 0 表示本次指定范围完成，3 表示媒体或策略要求的截图仍待补，2 表示执行失败。日志停在 running 时结合任务状态判断是否中断。`status` 查看采集历史，`coverage` 核查 SQLite、文件和媒体；`pending` 列出额外文件队列，正式 Docs 的差异用 `sync --dry-run` 查看。
+退出码 0 表示本次指定范围完成，3 表示媒体或策略要求的截图仍待补，2 表示执行失败。日志停在 running 时结合任务状态判断是否中断。`status` 查看采集历史，`coverage` 核查 SQLite、文件和媒体；`pending` 列出额外文件队列，正式 Markdown 的差异用 `sync --dry-run` 查看。
 
 - 微信未运行、账号不一致或版本不受支持时，检查 doctor，重新登录正确账号后重跑。仅在密钥失效时执行 wechat-auth。
 - Drive 报 DRIVE_AUTH_REQUIRED 时运行 auth，并在浏览器重新授权。同一 Windows 用户才能解开 DPAPI 令牌。网络故障后可以运行 update 重试全部流程；已构建的正文也可单独 sync。

@@ -27,6 +27,8 @@ cd WeChatTrace
 | `status`、`coverage`、`pending` | 检查本地采集记录、覆盖情况及文件上传队列 |
 | `stats` | 生成本地统计页，按北京时间选择日、周、月或自定义区间 |
 
+手动同步与每天 04:00 的更新都在 Drive 的 `01_Retrieval_Markdown` 中发布 UTF-8 Markdown 文件。打开 `01_CATALOG.md` 可跳转到各卷聊天原文。
+
 [检索文档与目录结构](docs/retrieval.md) · [聊天统计口径](docs/statistics.md) · [人工导入格式](docs/input.md) · [发布验证](docs/verification.md)
 
 ## 数据与第三方组件
