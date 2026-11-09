@@ -46,7 +46,7 @@ def block(m, zone, namespace=None):
     identity = namespace + ':' + m['id'] if namespace else m['id']
     return f"[{stamp(m,zone)}][{identity}][{m['sender']}]\n"+body
 
-def human(archive, root, rows,zone,enabled=None):
+def human(archive, root, rows,zone):
     months=defaultdict(list)
     for m in rows:
         months[m['date'][:7]].append(m)
@@ -73,7 +73,7 @@ def human(archive, root, rows,zone,enabled=None):
         write(root/(month+'.html'),''.join(parts))
         index.append(f'<p><a href="{month}.html">{month}（{len(items)} 条）</a></p>')
     from .statistics import statistics_page
-    statistics_page(root,rows,enabled)
+    statistics_page(root,rows)
     write(root/'index.html',header+'<h1>聊天归档</h1><p><a href="statistics.html">双方聊天统计</a></p>'+''.join(index))
 
 
@@ -296,5 +296,5 @@ def build(archive, enabled=None, refresh=False, preview=False):
             shutil.rmtree(stage)
     if not preview:
         result = promote(archive)
-        human(archive,root/'human',rows,zone,enabled)
+        human(archive,root/'human',rows,zone)
     return {**result,'llm':sem.stats,'folder':str(location(archive,preview))}

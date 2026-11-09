@@ -45,6 +45,7 @@ class StatisticsTests(unittest.TestCase):
             self.assertEqual(data['undated'],1)
             self.assertCountEqual(data['events'],[['2026-11-02T00:00:00','self',4],
                                                   ['2026-11-02T00:00:00','friend',0]])
+            self.assertEqual(set(data),{'events','undated','topicTimes','topicActivity'})
             self.assertNotIn('private quoted words',source)
 
     @unittest.skipUnless(shutil.which('node'),'Node is optional for testing the offline HTML logic')
@@ -75,7 +76,6 @@ const turns=[
  ['2026-11-02T00:00:03','self',1],['2026-11-02T01:30:03','friend',1],
  ['2026-11-02T03:00:04','self',1]];
 const t=summarize(turns,...bounds('day','2026-11-02'),['2026-11-01T23:59:59','2026-11-02T00:00:03']);
-assert.equal(t.self.starts,1);assert.equal(t.friend.starts,0);assert.equal(t.openStart,0);
 assert.equal(t.self.turns,2);assert.equal(t.friend.turns,2);assert.equal(t.rounds,2);
 assert.equal(t.longest,2);
 assert.equal(t.self.replies,1);assert.equal(t.self.replySeconds,0);assert.equal(t.friend.replies,2);
@@ -86,24 +86,7 @@ const sample=[
  ['2026-01-02T00:01:00','self',1],['2026-01-02T00:01:30','friend',1],['2026-01-02T00:02:00','self',1],
  ['2026-01-02T03:00:00','self',1],['2026-01-02T06:00:00','friend',1]];
 const jan1=summarize(sample,...bounds('day','2026-01-01'));
-assert.equal(jan1.friend.scenes.length,1);assert.equal(jan1.friend.scenes[0].rounds,2);
-assert.equal(jan1.self.scenes.length,0);assert.equal(jan1.friend.paused.length,1);
 const jan2=summarize(sample,...bounds('day','2026-01-02'));
-assert.equal(jan2.self.scenes[0].rounds,0);assert.equal(jan2.friend.scenes.length,0);
 assert.equal(jan2.self.paused.length,0);assert.deepEqual(jan2.friend.short,[30]);
-const boundaries=[
- {time:sample[1][0],review:'new',suggestion:{label:'delayed'}},
- {time:sample[5][0],review:'delayed'},
- {time:sample[6][0],review:'new'}];
-const merged=attribution(sample,boundaries,'','',1.5,'model');
-assert.equal(merged.friend.new,2);assert.equal(merged.self.delayed,1);
-assert.equal(merged.friend.scenes[0].end,sample[5][0]);assert.equal(merged.friend.scenes[0].rounds,2);
-assert.equal(attribution(sample,boundaries,...bounds('day','2026-01-01'),1.5,'review').friend.scenes[0].rounds,2);
-boundaries[1].review=null;
-const pending=attribution(sample,boundaries,'','',1.5,'review');
-assert.equal(pending.self.uncertain,1);assert.equal(pending.friend.scenes.length,0);
-assert.equal(attribution(sample,boundaries,'','',6,'review').self.uncertain,0);
-const old=attribution(sample,boundaries,'','',1.5,'old');
-assert.deepEqual(old.friend.scenes.map(x=>x.rounds),jan1.friend.scenes.map(x=>x.rounds));
 """
         subprocess.run(['node','-'],input=script+assertions,text=True,check=True)

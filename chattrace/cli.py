@@ -27,7 +27,6 @@ def main(argv=None):
     builder.add_argument('--preview', action='store_true')
     commands.add_parser('validate').add_argument('--preview', action='store_true')
     commands.add_parser('promote')
-    commands.add_parser('review-starts').add_argument('file')
     commands.add_parser('sync').add_argument('--dry-run', action='store_true')
     coverage_parser = commands.add_parser('coverage')
     coverage_parser.add_argument('--details', action='store_true', help='包含每条消息的证据状态')
@@ -98,7 +97,7 @@ def main(argv=None):
                 from .drive import credentials
                 credentials(config, interactive=True)
                 result = {'status': 'authorized'}
-            elif args.command in ('coverage', 'retrieval','stats','review-starts'):
+            elif args.command in ('coverage', 'retrieval','stats'):
                 from .core import Archive, exclusive
                 from .coverage import report
                 with exclusive(config['archive_root']):
@@ -106,13 +105,10 @@ def main(argv=None):
                     try:
                         if args.command == 'coverage':
                             result = report(archive)
-                        elif args.command in ('stats','review-starts'):
+                        elif args.command == 'stats':
                             from .statistics import statistics_page
                             from .retrieval import records
                             messages=records(archive)
-                            if args.command=='review-starts':
-                                from .start_review import import_reviews
-                                import_reviews(archive.root/'v4',messages,args.file)
                             path = statistics_page(archive.root/'v4/human',messages)
                             result = {'status':'generated','timezone':'Asia/Shanghai','path':str(path)}
                         else:
