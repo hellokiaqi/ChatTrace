@@ -1,6 +1,6 @@
 # WeChatTrace（ChatTrace）
 
-ChatTrace 将一个指定微信好友在 Windows 电脑上已有的聊天归档到本机，并将可检索的原文发布到私有 Google Drive。初始发行版为 **1.0.0**。本机已验证 Windows x64、Python 3.12 和微信 4.1.15.56。
+ChatTrace 在 Windows 上归档指定好友的微信或 QQ 私聊。每个平台使用独立配置、本地归档和私有 Drive 目录。已验证 Windows x64、Python 3.12、微信 4.1.15.56 和 QQNT 9.9.36.53644。
 
 原始文字、发送者、时间和来源 ID 保存到 SQLite。图片和表情按内容哈希保存。每日导出包含 Markdown、JSONL、Manifest 和修订历史。月度 HTML 用于人工浏览；面向 Drive 连接器的文档按连续聊天和话题组织，每条已入库消息在正式检索正文中出现一次。截图使用 Windows Graphics Capture，保留真实聊天画面，需要可用的桌面窗口和范围核对。
 
@@ -14,8 +14,15 @@ cd WeChatTrace
 ```
 
 1. 按 [安装与首次配置](docs/setup.md) 创建虚拟环境，确认好友身份，完成本地试读与 Drive 授权。
-2. 在项目目录执行 `.\run.ps1 update`，采集、构建并发布一次。
-3. 执行 `.\run.ps1 schedule install` 注册每天北京时间 04:00 的任务。暂停、恢复、查看结果和故障处理见 [运行手册](docs/operations.md)。
+2. 微信使用默认配置 `config.json`。QQ 请按 [QQ 配置与实测范围](docs/qq.md) 绑定账号和好友。
+3. 在项目目录执行对应的更新命令。完成首次配置后，手动运行和 Windows 计划任务均可独立完成采集、构建和发布。
+
+| 平台 | 立即更新 | 注册每日北京时间 04:00 任务 |
+|---|---|---|
+| 微信 | `.\run.ps1 update` | `.\run.ps1 schedule install` |
+| QQ | `.\run.ps1 --config config.qq.local.json update` | `.\run.ps1 --config config.qq.local.json schedule install` |
+
+在配置项 `archive_root` 指向的目录内，打开 `v4/human/index.html` 阅读聊天，打开 `v4/human/statistics.html` 查看统计。任务暂停、恢复及故障处理见 [运行手册](docs/operations.md)。
 
 | 入口 | 用途 |
 |---|---|
@@ -36,4 +43,3 @@ cd WeChatTrace
 `private/`、`config.json`、`oauth/`、`secrets/` 和 `.env` 属于部署数据。SQLite、消息、媒体、截图、密钥及真实测试材料均不随 Git 源码发布。本地明文归档依赖 Windows 账户及磁盘保护。启用语义分段时，所配置的模型供应商会收到聊天窗口原文。离线构建可使用 `build --no-llm`。
 
 微信适配器仅对已核实的客户端版本开放。它使用已登录用户权限读取账号密钥、联系人和消息快照。明文数据库在内存中查询。引用的上游源码、许可证和修改说明见 [第三方声明](chattrace/vendor/NOTICE.md)。
-QQNT 9.9.36.53644 已支持 Windows 上指定好友私聊的只读增量采集、历史补采、本地媒体、阅读统计、Markdown 和 Drive 定时同步。使用独立账号配置和任务；也支持 ChatLab 导入。见 [QQ 配置与实测范围](docs/qq.md)。

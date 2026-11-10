@@ -2,7 +2,7 @@
 
 ## 运行环境
 
-使用 Windows x64、Python 3.12 和受支持的微信桌面客户端。下列命令在项目根目录的 PowerShell 中执行。使用一般用户账户即可；首次装机需允许安装项目依赖。
+使用 Windows x64、Python 3.12 和所选平台支持的桌面客户端。下列命令在项目根目录的 PowerShell 中执行。使用一般用户账户即可；首次装机需允许安装项目依赖。
 
 ```powershell
 py -3.12 -m venv .venv
@@ -14,6 +14,8 @@ py -3.12 -m venv .venv
 启动任务时使用注册当时的 Python 绝对路径。移动项目、替换 Python 或重建虚拟环境后，按运行手册重新注册任务。
 
 ## 绑定一个联系人
+
+以下命令用于微信。QQ 用户请先按 [QQ 单好友归档](qq.md) 设置独立配置；后续命令在子命令前加 `--config config.qq.local.json`。
 
 在新部署中将 `config.example.json` 复制为 `config.json`。先在微信资料页核实好友的唯一微信号，填写 `contact_id` 和备注名 `contact_name`，再把 `identity_confirmed` 设为 true。首次绑定保留模板中的两个 `BIND_ON_SETUP`。使用已登录且存有目标聊天记录的 Windows 账户执行：
 
