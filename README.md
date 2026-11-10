@@ -4,6 +4,8 @@ ChatTrace 将一个指定微信好友在 Windows 电脑上已有的聊天归档�
 
 原始文字、发送者、时间和来源 ID 保存到 SQLite。图片和表情按内容哈希保存。每日导出包含 Markdown、JSONL、Manifest 和修订历史。月度 HTML 用于人工浏览；面向 Drive 连接器的文档按连续聊天和话题组织，每条已入库消息在正式检索正文中出现一次。截图使用 Windows Graphics Capture，保留真实聊天画面，需要可用的桌面窗口和范围核对。
 
+已配置的电脑可双击 **ChatTrace.cmd**，在桌面操作台切换微信或 QQ、同步归档和打开聊天记录。
+
 ## 开始使用
 
 在 Windows PowerShell 中获取源码：
