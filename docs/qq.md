@@ -1,10 +1,47 @@
 # QQ 单好友归档
 
-当前适配器读取 QQNT_Export 的 ChatLab 0.0.2 私聊 JSON。输入来自已导出的文件；导出步骤需由可用且已获授权的工具完成。上游 [JSON 生成器](https://github.com/Tealina28/QQNT_Export/blob/dev/exporters/chatlab_json.py) 提供消息 ID、成员 ID、秒级时间、类型和引用目标。其 JSON 导出不打包独立媒体。
+## 直接读取 QQNT
 
-复制 config.qq.example.json 为 private/qq-config.json 时注意所有相对路径以配置文件所在目录解析。建议直接在项目根目录另存为 config.qq.local.json。填写导出中的 meta.ownerId、目标成员 platformId、备注与导出文件路径，核对身份后设 identity_confirmed=true。仅当 ownerId 与账号相符、成员集合恰好为这两人、每条发送者均匹配时才导入。数据分开入库，不按备注推断两个人为同一身份。
+实测 Windows QQNT 9.9.36.53644。QQ 使用独立库、输入目录、来源标识、Drive 目录、上传台账和计划任务。例子假设已将 config.qq-db.example.json 复制为 config.qq.local.json。填写自己的数字 QQ 号、确认过的好友 QQ 号、备注及本机账号目录，再启用 identity_confirmed。该配置已被 Git 忽略。所有相对路径从配置文件所在目录解析。
 
-运行 `.\run.ps1 --config config.qq.local.json run --no-upload` 做首次导入。再用同一配置运行 build --no-llm、stats、validate 或 update。定时 update 可以读取外部程序更新的同一路径，按来源消息 ID 去重；它不会主动刷新 QQ 客户端。独立的 QQ 任务名避免覆盖微信任务。
+```powershell
+.\run.ps1 --config config.qq.local.json qq-auth
+.\run.ps1 --config config.qq.local.json run --backfill --no-upload
+.\run.ps1 --config config.qq.local.json update
+.\run.ps1 --config config.qq.local.json stats
+```
 
-处理范围为已导出的正文、来源身份、时间、类型、引用 ID。媒体占位保留其导出表示，缺原件标记待补；未知类型保留编码。QQ 原生窗口截图、直接读 QQNT 库，以及从真实 QQ 私聊至 Drive 的闭环未经验证。客户端实时接入另需验证版本并确认数据访问方法。
-本机核对记录：Windows QQNT 9.9.36.53644 正在运行，发现账号目录和 nt_msg.db，文件头不是标准 SQLite。使用合成 ChatLab 输入实测首次导入、重复导入、同秒新增引用消息、错误账号和群聊拒绝、Markdown 构建及同步预检；原有微信正式检索文档独立校验通过。此项未执行 QQ 私聊实际上传。
+qq-auth 在当前用户权限下只读查找消息库与联系人库盐值对应的密钥，以第一页 HMAC 验证后写入 Windows DPAPI 文件。账号路径必须与配置吻合。密钥失效时重新执行 qq-auth。数据库页在内存中解密，应用已提交且通过校验的 WAL，再运行 quick_check。联系人表按数字 QQ 号查唯一 UID，私聊查询限制为此 UID；发送者按目标 UID 及本人 UID 集判定。页验证或身份核对失败时停止。库或 WAL 读取期间发生变化会重试；当前每次需读取当前数据库文件，不宣称物理 I/O 为增量。消息查询按时间水位、默认 72 小时重叠窗口和待补来源 ID 进行。run --backfill 扫描整个目标会话。归档使用来源消息 ID 去重；补采和普通更新共用 SQLite 提交及修订历史。
+
+QQ 消息正文使用经核对的 protobuf 字段。组合消息保留元素顺序、正文和媒体索引；QQ 内置表情保留表情编号和显示文字。显式引用优先保留来源 ID，否则使用同一联系人的来源序号、时间和发送方号码唯一匹配；解析不全时记录来源摘要和待核信息。图片原件必须通过来源 MD5。来源记录指向本机可读预览时可保留预览；原件校验失败继续记为待补，后续重试。语音、视频、文件及其他未验证类型的完整解析与在线原件恢复仍有限。
+
+## 截图及范围核验
+
+QQ 主窗口可能包含其他会话。采集前需人工核对 QQ 号，并在本地配置 qq_panel 的 size（原图宽高）、rect（目标标题和消息区的左、上、右、下像素）、title（标题栏联系人显示名）和 window_title（Windows 窗口标题）。此设置与具体窗口尺寸对应。程序仅落盘标定区域，先检查尺寸、目标标题与至少两条消息 OCR 锚点；窗口最小化、锁屏或版式不符会拒绝抓图。直接 capture 尝试 Windows Graphics Capture。也可以使用下列方式核对用户提供的真实窗口截图：
+
+```powershell
+.\run.ps1 --config config.qq.local.json capture --qq-image "C:\path\qq.png"
+.\run.ps1 --config config.qq.local.json capture-link S<截图摘要> M000001 M000002
+```
+
+原文、时间及发送者取自数据库；视觉范围需核对，截图边缘的残缺消息单独记录。截图显示客户端的界面时间；本地档案可按北京时间展示同一时刻。
+
+完整回填后，每次增量运行还核对该好友早于重叠窗口的来源消息 ID。新同步到电脑的旧消息按 ID 补读，已入库的旧正文无需重复解析。首次限量试跑仍按配置范围采集。
+
+## 同步与定时运行
+
+首次在 config.qq.local.json 指定私有 drive_folder_id 和 OAuth 路径；本机可复用同一用户已授权的 Drive 根目录。update 生成本地阅读、统计及 Markdown，并发布到 QQ 联系人目录下的 01_Retrieval_Markdown。启用现有 LLM 时，对应的目标好友原文会发送给该供应商；配置和隐私说明见 README。原始媒体、预览和截图默认留在本机。确认部署后启用 live_acceptance_confirmed，再执行：
+
+```powershell
+.\run.ps1 --config config.qq.local.json schedule install
+.\run.ps1 --config config.qq.local.json schedule run
+Get-ScheduledTaskInfo -TaskName ChatTrace-Archive-QQ
+```
+
+北京时间每天 04:00。任务使用交互用户，部分媒体仍待补时会返回 synced_partial（退出码 3），即使检索文档已成功更新。普通微信任务是另一个任务名。
+
+## 已有导出与上游
+
+config.qq.example.json 用于 QQNT_Export 的 ChatLab 0.0.2 私聊 JSON。按导出的 meta.ownerId 和成员 platformId 核对双方身份。该 JSON 不包含独立媒体原件。详情参见 [导出器源码](https://github.com/Tealina28/QQNT_Export/blob/dev/exporters/chatlab_json.py)。不要混用两种读取器的归档与 inbox。
+
+Windows 密钥匹配方法、消息字段及 MIT 来源见 [第三方声明](../chattrace/vendor/NOTICE.md)。已实测目标私聊记录、重复采集、隐私裁剪截图、原始媒体摘要、引用关系与 Markdown 管线。系统睡眠唤醒、其他 QQ 版本及手机全历史覆盖未验证。

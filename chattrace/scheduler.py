@@ -31,7 +31,7 @@ def task_xml(config, executable=None):
 
 
 def schedule(config, action):
-    name = TASK_NAME+'-QQ' if config['reader']=='qq-export' else TASK_NAME
+    name = TASK_NAME+'-QQ' if config['reader'] in ('qq-export','qq-db') else TASK_NAME
     if action == 'export':
         output = Path(config['config_path']).parent / 'private' / (name+'.xml')
         atomic(output, task_xml(config).encode('utf-16'))

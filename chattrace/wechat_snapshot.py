@@ -84,6 +84,10 @@ def decode_snapshot(raw, wal, key):
             raise ArchiveError('WECHAT_PAGE_AUTHENTICATION_FAILED')
         return wc._decrypt_page(key, page, number)
 
+    return assemble_snapshot(raw, wal, page_plain)
+
+
+def assemble_snapshot(raw, wal, page_plain):
     out = bytearray(len(raw))
     for offset in range(0, len(raw), 4096):
         out[offset:offset + 4096] = page_plain(raw[offset:offset + 4096], offset // 4096 + 1)

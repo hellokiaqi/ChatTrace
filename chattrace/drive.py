@@ -99,7 +99,7 @@ class GoogleDrive:
             if meta.get('shared'):
                 raise ArchiveError('DRIVE_FOLDER_MUST_BE_PRIVATE_WRITABLE')
         contact_key = hashlib.sha256((config['account_id'] + '\0' + config['contact_id']).encode()).hexdigest()[:12]
-        self.contact_root = self.folder('@contact', config.get('drive_contact_name', ('qq-contact-' if config.get('reader')=='qq-export' else 'contact-') + contact_key), self.root)
+        self.contact_root = self.folder('@contact', config.get('drive_contact_name', ('qq-contact-' if config.get('reader') in ('qq-export','qq-db') else 'contact-') + contact_key), self.root)
 
     def reserve_id(self):
         return self.api.files().generateIds(count=1, space='drive', type='files').execute(num_retries=3)['ids'][0]

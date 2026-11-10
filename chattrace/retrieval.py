@@ -21,7 +21,7 @@ START="""# ChatTrace 正式检索入口
 先查 01_CATALOG，按时间或话题打开所列正式 Retrieval 文档。每卷可跨日期并包含多个 Topic Segment。标题、关键词及描述用于导航；回答时读取 [原始聊天]，引用时间、发送者与稳定消息 ID，并按需展开相邻上下文。
 正式检索的原文来源仅限目录所列正文。Human Archive 和分析记录用于其他用途。检索未命中时报告未找到；已导入消息的导出数量与微信全历史覆盖分别核验。无法确认的事项请明确标注。"""
 def start_here(config):
-    return START.replace('微信全历史','QQ 全历史') if config.get('reader')=='qq-export' else START
+    return START.replace('微信全历史','QQ 全历史') if config.get('reader') in ('qq-export','qq-db') else START
 
 
 def write(path, data):
@@ -216,7 +216,7 @@ def inspect_view(archive, folder):
             active_block, previous_topic = s['block_id'], s['segment_id']
     names = {'01_CATALOG.md','00_START_HERE.md'}
     for n,d in enumerate(docs,1):
-        expected = document(d['sessions'],n,lookup,manifest['zone'],manifest['namespace'],archive.config['contact_name'],'QQ' if archive.config.get('reader')=='qq-export' else 'WeChat')
+        expected = document(d['sessions'],n,lookup,manifest['zone'],manifest['namespace'],archive.config['contact_name'],'QQ' if archive.config.get('reader') in ('qq-export','qq-db') else 'WeChat')
         if any(d[k]!=v for k,v in expected.items()):
             raise ArchiveError('V4_DOCUMENT_METADATA_MISMATCH')
         names.add(d['filename'])
@@ -281,7 +281,7 @@ def build(archive, enabled=None, refresh=False, preview=False):
     root.mkdir(exist_ok=True)
     sem = Semantic(root,enabled,refresh)
     zone = cfg.get('timezone','Asia/Shanghai')
-    platform = 'QQ' if cfg['reader']=='qq-export' else 'WeChat'
+    platform = 'QQ' if cfg['reader'] in ('qq-export','qq-db') else 'WeChat'
     ns = digest(encode([platform.lower(),cfg['account_id'],cfg['contact_id']]).encode())[:16]
     docs = pack(topics(rows,sem),lookup,zone,ns,cfg['contact_name'],soft,hard,platform)
     stage = Path(tempfile.mkdtemp(dir=archive.root,prefix='build-'))

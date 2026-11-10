@@ -1,0 +1,21 @@
+{
+  "reader": "qq-db",
+  "account_id": "YOUR_QQ_NUMBER",
+  "contact_id": "FRIEND_QQ_NUMBER",
+  "contact_name": "QQ 好友",
+  "identity_confirmed": false,
+  "archive_root": "private/qq-db-archive",
+  "inbox": "private/qq-db-inbox",
+  "timezone": "Asia/Shanghai",
+  "schedule_time": "04:00",
+  "upload_enabled": false,
+  "live_acceptance_confirmed": false,
+  "screenshot_policy": "manual",
+  "auto_capture": false,
+  "client_secret_path": "secrets/client_secret.json",
+  "token_path": "secrets/token.dpapi",
+  "qq_account_dir": "C:/Users/YOUR_WINDOWS_USER/Documents/Tencent Files/YOUR_QQ_NUMBER",
+  "qq_secret_path": "secrets/qq.dpapi",
+  "initial_message_limit": 10,
+  "overlap_hours": 72
+}

@@ -63,7 +63,7 @@ def load_config(path):
             raise ArchiveError('CONFIG_REQUIRED_' + key.upper())
     if data.get('identity_confirmed') is not True:
         raise ArchiveError('IDENTITY_NOT_CONFIRMED')
-    if data.get('reader') not in ('import', 'wechat-ui', 'wechat-db', 'qq-export'):
+    if data.get('reader') not in ('import', 'wechat-ui', 'wechat-db', 'qq-export','qq-db'):
         raise ArchiveError('UNKNOWN_READER')
     if data['reader'] == 'wechat-db':
         if not all(isinstance(data.get(k), str) and data[k] for k in ('wechat_secret_path', 'contact_username')):
@@ -74,12 +74,14 @@ def load_config(path):
                 raise ArchiveError('INVALID_READER_RANGE')
     if data['reader']=='qq-export' and (not isinstance(data.get('qq_export_path'),str) or not data['qq_export_path'] or data.get('auto_capture')):
         raise ArchiveError('QQ_EXPORT_CONFIGURATION_REQUIRED')
+    if data['reader']=='qq-db' and (not all(data.get(k) for k in ('qq_account_dir','qq_secret_path')) or data.get('auto_capture')):
+        raise ArchiveError('QQ_DB_CONFIGURATION_REQUIRED')
     tz(data.get('timezone', 'Asia/Shanghai'))
     if data.get('screenshot_policy', 'media') not in ('media', 'all', 'manual'):
         raise ArchiveError('INVALID_SCREENSHOT_POLICY')
     if type(data.get('upload_revisions', False)) is not bool:
         raise ArchiveError('INVALID_UPLOAD_REVISIONS')
-    for key in ('qq_export_path','archive_root', 'inbox', 'token_path', 'client_secret_path', 'wechat_secret_path'):
+    for key in ('qq_secret_path','qq_account_dir','qq_export_path','archive_root', 'inbox', 'token_path', 'client_secret_path', 'wechat_secret_path'):
         if data.get(key):
             data[key] = str((path.parent / data[key]).resolve())
     data['config_path'] = str(path)
@@ -121,8 +123,10 @@ class Archive:
         self.root.mkdir(parents=True, exist_ok=True)
         marker = self.root / '.chattrace.json'
         identity = {k: config[k] for k in ('account_id', 'contact_id')}
-        if config.get('reader')=='qq-export':
+        if config.get('reader') in ('qq-export','qq-db'):
             identity['platform']='qq'
+        if config.get('reader')=='qq-db':
+            identity['reader']='qq-db'
         if marker.exists():
             if json.loads(marker.read_text('utf-8')) != identity:
                 raise ArchiveError('ARCHIVE_IDENTITY_MISMATCH')
@@ -398,6 +402,8 @@ def upload_exclusion(config, relative):
 def normalize(batch, base, config):
     if batch.get('schema') != 1 or batch.get('contact_id') != config['contact_id'] or batch.get('account_id') != config['account_id']:
         raise ArchiveError('BATCH_IDENTITY_MISMATCH')
+    if config.get('reader')=='qq-db' and batch.get('source')!='qq-db':
+        raise ArchiveError('QQ_BATCH_SOURCE_MISMATCH')
     captured = timestamp(batch.get('captured_at'))
     source = batch.get('source')
     if not isinstance(source, str) or not source:
@@ -454,7 +460,7 @@ def normalize(batch, base, config):
         if any(ref not in screenshots for ref in refs):
             raise ArchiveError('SCREENSHOT_REFERENCE_MISSING')
         media = [{'kind': m['kind'], 'path': asset(m['path'], 'media')} for m in item.get('media', [])]
-        known = ('text', 'image', 'sticker', 'voice', 'video', 'file', 'quote', 'system', 'recalled')
+        known = ('text', 'image', 'sticker', 'voice', 'video', 'file', 'quote', 'system', 'recalled', 'emoji')
         message = dict(item)
         if screenshot_metadata:
             message['screenshot_metadata'] = {screenshots[ref]: screenshot_metadata[screenshots[ref]] for ref in refs if screenshots[ref] in screenshot_metadata}
@@ -462,7 +468,7 @@ def normalize(batch, base, config):
                        source_id=source_id, source=source, collected_at=batch['captured_at'],
                        screenshots=sorted(screenshots[ref] for ref in refs), media=media,
                        reply_to=item.get('reply_to'),
-                       needs_review=(item['type'] not in known or time is None or item['sender'] == 'unknown' or
+                       needs_review=(bool(item.get('source_metadata',{}).get('parse_incomplete') or item.get('source_metadata',{}).get('missing_media_parts')) or item['type'] not in known or time is None or item['sender'] == 'unknown' or
                                      (item['type'] in ('image', 'sticker', 'voice', 'video', 'file') and not media) or
                                      item.get('source_metadata', {}).get('media_status') == 'thumbnail'))
         messages.append((identity, message))
@@ -492,6 +498,9 @@ def run_locked(config, no_upload=False, drive_factory=None):
             raise ArchiveError('WECHAT_UI_READER_UNAVAILABLE')
         before_max = archive.db.execute('SELECT coalesce(max(id),0) FROM messages').fetchone()[0]
         checkpoint = None
+        if config['reader']=='qq-db':
+            from .qq_native import collect as collect_db
+            checkpoint=collect_db(config,archive)
         if config['reader']=='qq-export':
             from .qq_reader import collect as collect_qq
             collect_qq(config)
@@ -522,7 +531,7 @@ def run_locked(config, no_upload=False, drive_factory=None):
         archive.materialize()
         if checkpoint is not None:
             with archive.db:
-                archive.db.execute('INSERT OR REPLACE INTO reader_state VALUES (?,?)', ('wechat-db-v4', encode(checkpoint)))
+                archive.db.execute('INSERT OR REPLACE INTO reader_state VALUES (?,?)', ('qq-db' if config['reader']=='qq-db' else 'wechat-db-v4', encode(checkpoint)))
         shots = archive.db.execute("SELECT count(*) FROM files WHERE path LIKE 'screenshots/%'").fetchone()[0]
         uploads = 0
         if not no_upload:

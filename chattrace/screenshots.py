@@ -15,6 +15,10 @@ from .core import ArchiveError, atomic, digest, encode, now
 
 
 def target_window(config):
+    qq = config.get('reader')=='qq-db'
+    if qq and not config.get('qq_panel'):
+        raise ArchiveError('QQ_PANEL_CALIBRATION_REQUIRED')
+    title = config['qq_panel']['window_title'] if qq else config['contact_name']
     user = ctypes.WinDLL('user32', use_last_error=True)
     user.OpenInputDesktop.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
     user.OpenInputDesktop.restype = wintypes.HANDLE
@@ -42,7 +46,7 @@ def target_window(config):
         size = user.GetWindowTextLengthW(handle)
         text = ctypes.create_unicode_buffer(size + 1)
         user.GetWindowTextW(handle, text, size + 1)
-        if text.value == config['contact_name'] and user.IsWindowVisible(handle):
+        if text.value == title and user.IsWindowVisible(handle):
             windows.append(handle)
         return True
 
@@ -64,7 +68,7 @@ def target_window(config):
     try:
         length = wintypes.DWORD(32768)
         exe = ctypes.create_unicode_buffer(length.value)
-        if not process or not kernel.QueryFullProcessImageNameW(process, 0, exe, ctypes.byref(length)) or Path(exe.value).name.lower() != 'weixin.exe':
+        if not process or not kernel.QueryFullProcessImageNameW(process, 0, exe, ctypes.byref(length)) or Path(exe.value).name.lower() != ('qq.exe' if qq else 'weixin.exe'):
             raise ArchiveError('TARGET_WINDOW_PROCESS_MISMATCH')
     finally:
         if process:
@@ -223,8 +227,21 @@ async def recognize(data):
 
 
 def propose_capture(config, archive, source_path=None, bottom=None, height=None):
-    raw = Path(source_path).read_bytes() if source_path else capture_window(config, height)
+    qq=config.get('reader')=='qq-db'
+    raw = Path(source_path).read_bytes() if source_path else capture_window(config, None if qq else height)
     picture = Image.open(io.BytesIO(raw))
+    if qq:
+        panel=config.get('qq_panel',{})
+        if list(picture.size)!=panel.get('size'):
+            raise ArchiveError('QQ_PANEL_CALIBRATION_REQUIRED')
+        left,top,right,edge=panel['rect']
+        if not 0<=left<right<=picture.width or not 0<=top<edge<=picture.height:
+            raise ArchiveError('QQ_PANEL_CALIBRATION_REQUIRED')
+        picture=picture.crop((left,top,right,edge))
+        stream=io.BytesIO()
+        picture.save(stream,format='PNG')
+        raw=stream.getvalue()
+        bottom=picture.height
     if bottom is None:
         bottom = picture.height - config.get('screenshot_input_height', 140)
     if not 150 < bottom <= picture.height:
@@ -237,8 +254,6 @@ def propose_capture(config, archive, source_path=None, bottom=None, height=None)
     capture_id = 'S' + digest(data)
     original = folder / (capture_id + '-original' + ('.jpg' if raw.startswith(b'\xff\xd8\xff') else '.png'))
     path = folder / (capture_id + '.png')
-    atomic(original, raw)
-    atomic(path, data)
     lines = asyncio.run(recognize(data))
     compact = lambda text: re.sub(r'\s+', '', text)
     observed = compact(''.join(line['text'] for line in lines))
@@ -246,13 +261,24 @@ def propose_capture(config, archive, source_path=None, bottom=None, height=None)
     for row in archive.db.execute('SELECT id,payload FROM messages'):
         message = json.loads(row['payload'])
         text = compact(message['text'])
-        if message['type'] == 'text' and len(text) >= 5 and text in observed:
+        fragment_match = qq and any(len(part)>=8 and part in text for part in
+                                    (compact(line['text']) for line in lines if line['y']>=45))
+        if message['type'] == 'text' and len(text) >= 5 and (text in observed or fragment_match):
             anchors.append({'id': f"M{row['id']:06d}", 'source_id': message['source_id'], 'sequence': message['sequence']})
+    if qq:
+        headers=[compact(line['text']) for line in lines if line['x']<150 and line['y']<45]
+        if compact(panel['title']) not in headers or len(anchors)<2:
+            raise ArchiveError('QQ_TARGET_TITLE_OR_CONTEXT_NOT_CONFIRMED')
+    atomic(original,raw)
+    atomic(path,data)
     anchors.sort(key=lambda x: x['sequence'])
     record = {'schema': 1, 'id': capture_id, 'captured_at': now(), 'source': 'existing_verified_capture' if source_path else 'Windows_Graphics_Capture',
               'original_path': str(original.relative_to(Path(config['inbox']))), 'path': str(path.relative_to(Path(config['inbox']))),
               'crop': [0, 0, picture.width, bottom], 'original_size': list(picture.size),
               'text_anchors': anchors, 'message_ids': [], 'coverage': 'awaiting_visual_confirmation'}
+    if qq:
+        record.update(source='user_supplied_qq_panel' if source_path else 'Windows_Graphics_Capture_QQ_panel',
+                      input_size=panel['size'],panel_rect=panel['rect'])
     atomic(folder / (capture_id + '.json'), encode(record).encode())
     return {'status': 'review_required', 'image': str(path), 'capture_id': capture_id,
             'anchors': [a['id'] for a in anchors], 'automatic_full_range': False}
@@ -285,6 +311,9 @@ def confirm_capture(config, archive, capture_id, message_ids, partial_ids=None):
     if len(sources) != 1:
         raise ArchiveError('SCREENSHOT_MIXED_SOURCES')
     metadata = {k: record[k] for k in ('captured_at', 'source', 'crop', 'original_size')}
+    for field in ('input_size','panel_rect'):
+        if field in record:
+            metadata[field]=record[field]
     metadata['range_verification'] = 'visual_confirmation'
     metadata['partially_visible_message_ids'] = partial_ids or []
     metadata['original_sha256'] = digest((Path(config['inbox']) / record['original_path']).read_bytes())

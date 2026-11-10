@@ -10,13 +10,13 @@ from .core import ArchiveError, atomic, encode, load_config, run, safe_error, up
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description='ChatTrace — 微信 4.1.15.56 单好友归档')
+    parser = argparse.ArgumentParser(description='ChatTrace — Windows 微信 / QQNT 单好友归档')
     parser.add_argument('--config', default='config.json')
     commands = parser.add_subparsers(dest='command', required=True)
     runner = commands.add_parser('run')
     runner.add_argument('--no-upload', action='store_true', help='提交本地归档但不联网上传')
     runner.add_argument('--backfill', action='store_true', help='补采目标好友全部本机消息，不受初始条数和时间窗口限制')
-    for name in ('doctor', 'init', 'auth', 'wechat-auth', 'status', 'pending', 'retrieval', 'update','stats'):
+    for name in ('doctor', 'init', 'auth', 'wechat-auth', 'qq-auth', 'status', 'pending', 'retrieval', 'update','stats'):
         commands.add_parser(name)
     builder = commands.add_parser('build')
     mode = builder.add_mutually_exclusive_group()
@@ -33,6 +33,7 @@ def main(argv=None):
     search = commands.add_parser('search')
     search.add_argument('keyword')
     capture = commands.add_parser('capture', help='保存已打开的目标独立聊天窗口，输出待核对图片')
+    capture.add_argument('--qq-image', help='从用户提供的 QQ 截图核对并保留已标定聊天区')
     capture.add_argument('--bottom', type=int, help='保留画面的下边界像素；默认裁去底部140像素')
     capture.add_argument('--height', type=int, default=1200, help='临时拉高目标窗口至该像素高度；结束后恢复尺寸')
     series = commands.add_parser('capture-series', help='分段捕获连续聊天上下文，保留重叠与原图')
@@ -51,10 +52,10 @@ def main(argv=None):
             result = initialize(Path(args.config))
         else:
             config = load_config(args.config)
-            if config['reader']=='qq-export' and args.command in ('wechat-auth','capture','capture-link','capture-series'):
+            if (config['reader']=='qq-export' and args.command in ('wechat-auth','capture','capture-link','capture-series')) or (config['reader']=='qq-db' and args.command=='wechat-auth'):
                 raise ArchiveError('QQ_CLIENT_ACCESS_UNSUPPORTED')
             if args.command == 'run':
-                if args.backfill and config['reader'] != 'wechat-db':
+                if args.backfill and config['reader'] not in ('wechat-db','qq-db'):
                     raise ArchiveError('BACKFILL_REQUIRES_WECHAT_DB')
                 config['backfill'] = args.backfill
                 result = run(config, args.no_upload)
@@ -75,6 +76,11 @@ def main(argv=None):
                             result = sync(archive, args.dry_run)
                     finally:
                         archive.close()
+            elif args.command == 'qq-auth':
+                if config['reader']!='qq-db':
+                    raise ArchiveError('QQ_DB_CONFIGURATION_REQUIRED')
+                from .qq_snapshot import authorize
+                result=authorize(config)
             elif args.command == 'wechat-auth':
                 from .wechat_access import refresh_secret
                 result = refresh_secret(config)
@@ -88,7 +94,9 @@ def main(argv=None):
                     archive = Archive(config)
                     try:
                         if args.command == 'capture':
-                            result = propose_capture(config, archive, bottom=args.bottom, height=args.height)
+                            if args.qq_image and config['reader']!='qq-db':
+                                raise ArchiveError('QQ_DB_CONFIGURATION_REQUIRED')
+                            result = propose_capture(config, archive, source_path=args.qq_image, bottom=args.bottom, height=args.height)
                         elif args.command == 'capture-series':
                             result = capture_series(config, archive, args.pages, args.height)
                         else:
@@ -162,7 +170,7 @@ def inspect(config, args):
 def doctor():
     report = {'python': sys.version, 'executable': sys.executable, 'windows': platform.platform(),
               'wechat_reader': 'read-only database adapter; exact contact identity, text, timestamps, images and stickers locally verified',
-              'verified_wechat_versions': ['4.1.15.56'], 'google_sdk_installed': importlib.util.find_spec('googleapiclient') is not None,
+              'verified_qqnt_versions': ['9.9.36.53644'], 'verified_wechat_versions': ['4.1.15.56'], 'google_sdk_installed': importlib.util.find_spec('googleapiclient') is not None,
               'screenshot_automation': 'Windows Graphics Capture and overlapping 1200px window segments verified; complete message-range matching still needs visual confirmation',
               'sync_freshness': 'local database only; phone/server completeness not asserted'}
     script = "$p=Get-Process Weixin,WeChat -ErrorAction SilentlyContinue | Where-Object Path | Select-Object -First 1; if($p){$f=Get-Item -LiteralPath $p.Path; @{path=$p.Path;version=$f.VersionInfo.FileVersion} | ConvertTo-Json -Compress}"

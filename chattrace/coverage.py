@@ -51,6 +51,8 @@ def message_evidence(root, mid, message, partial_paths=()):
         media = 'not_applicable'
     elif not message['media'] or any(not (root / a['path']).is_file() for a in message['media']):
         media = 'pending'
+    elif message.get('source_metadata',{}).get('missing_media_parts'):
+        media = 'pending'
     elif status == 'thumbnail':
         media = 'thumbnail_only'
     elif status.startswith('unavailable:'):
