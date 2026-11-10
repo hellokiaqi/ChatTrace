@@ -112,3 +112,32 @@ class QQNativeTests(unittest.TestCase):
                 self.assertEqual((base/asset['path']).read_bytes(),data)
                 self.assertEqual(verified_media('image',md5,e,base/'qq',{},base,attempted),asset)
                 self.assertEqual(get.call_count,2)
+
+    def test_unlabelled_qq_face_keeps_character_position(self):
+        first = parse_content(b'')
+        first.update(content_type=1, text='好🙂')
+        face = parse_content(b'')
+        face.update(content_type=6, video_flag=64)
+        last = dict(first, text='。')
+        row = dict(id=1,seq=1,ts=1,body=b'',kind=2,sender='peer')
+        result = message(row,[first,face,last],None,'peer',{'self'},Path('.'),{},Path('.'))
+        self.assertEqual((result['text'],result['type']),('好🙂。','emoji'))
+        self.assertEqual(result['source_metadata']['parts'][1],dict(tag=6,face_index=64,text_offset=2))
+
+    def test_contact_recommendation_from_wire_fields(self):
+        import base64
+        # Field keys for QQ element type, card subtype and base64 card payload.
+        prefix = bytes.fromhex('d0fc151a e0c2170b bac317')
+        def parse_card(title):
+            title = title.encode()
+            header = bytes([34,len(title)]) + title
+            tag = b'example'
+            label = bytes([10,len(tag)]) + tag
+            encoded = base64.b64encode(bytes([18,len(header)])+header+bytes([26,len(label)])+label)
+            return parse_content(prefix+bytes([len(encoded)])+encoded)
+        row = dict(id=1,seq=1,ts=1,body=b'',kind=23,sender='')
+        def result(element):
+            return message(row,[element],None,'peer',{'self'},Path('.'),{},Path('.'))
+        card = result(parse_card('推荐联系人'))
+        self.assertEqual((card['type'],card['sender'],card['text']),('system','system','推荐联系人\nexample'))
+        self.assertEqual(result(parse_card('其他'))['type'],'unknown')

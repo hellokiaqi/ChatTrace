@@ -1,4 +1,7 @@
 """QQNT protobuf elements; adapted from qq-nt-export (MIT). See NOTICE.md."""
+import base64
+
+
 def _read_varint(buf, i):
     result = 0
     shift = 0
@@ -129,6 +132,15 @@ def parse_content(raw):
         "rich_text": _s(f, 48705),
         "rich_markdown": _s(f, 48701),
     }
+    if c["content_type"] == 26 and _i(f, 48172) == 11:
+        try:
+            card = decode_fields(base64.b64decode(_b(f, 48183) or b"", validate=True))
+            header = decode_fields(_b(card, 2) or b"")
+            if _b(header, 4) == "推荐联系人".encode():
+                labels = [(_b(decode_fields(item), 1) or b"").decode() for item in _bs(card, 3)]
+                c["contact_recommendation"] = ["推荐联系人", *labels]
+        except (IndexError, ValueError):
+            pass
     ref = _b(f, 47710)
     c["ref_msg"] = parse_content(ref) if ref else None
     return c

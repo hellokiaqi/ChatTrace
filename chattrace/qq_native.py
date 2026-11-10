@@ -121,10 +121,18 @@ def message(row,elements,error,peer,owners,media_root,files,base,attempted=None)
         if tag==1:
             kind='text'
             text.append(e['text'] or '')
-        elif tag==6 and e['video_text']:
+        elif tag==6 and (e['video_text'] or e['video_flag'] is not None):
             kind='emoji'
-            text.append(e['video_text'])
+            if e['video_text']:
+                text.append(e['video_text'])
+            else:
+                part['text_offset']=sum(map(len,text))
             part['face_index']=e['video_flag']
+        elif row['kind']==23 and tag==26 and e.get('contact_recommendation'):
+            kind='system'
+            part['subtype']='contact_recommendation'
+            part['labels']=e['contact_recommendation']
+            text.append('\n'.join(part['labels']))
         elif tag==7:
             kind='quote'
             reference=str(e['reply_msg_id']) if e['reply_msg_id'] else None
