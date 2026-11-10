@@ -1,16 +1,39 @@
-# WeChatTrace（ChatTrace）
+# ChatTrace
 
 ChatTrace 在 Windows 上归档指定好友的微信或 QQ 私聊。每个平台使用独立配置、本地归档和私有 Drive 目录。已验证 Windows x64、Python 3.12、微信 4.1.15.56 和 QQNT 9.9.36.53644。
 
 原始文字、发送者、时间和来源 ID 保存到 SQLite。图片和表情按内容哈希保存。每日导出包含 Markdown、JSONL、Manifest 和修订历史。月度 HTML 用于人工浏览；面向 Drive 连接器的文档按连续聊天和话题组织，每条已入库消息在正式检索正文中出现一次。截图使用 Windows Graphics Capture，保留真实聊天画面，需要可用的桌面窗口和范围核对。
+
+## 架构
+
+手动执行 `update` 和北京时间 04:00 的计划任务共用同一条流程。下图展示默认发布路径。每次运行只使用当前配置指定的平台和好友，微信与 QQ 各自维护独立的 SQLite 状态库、资源目录和 Drive 发布记录。
+
+```mermaid
+flowchart TD
+    WX["微信只读快照"] --> W["微信读取器"]
+    QQ["QQNT 只读快照"] --> Q["QQ 读取器"]
+    W --> I["目标好友增量采集"]
+    Q --> I
+    I --> DB[("本地 SQLite：消息、修订、同步状态")]
+    I --> A["媒体文件与预览"]
+    S["聊天窗口截图 · 核验可见范围"] --> A
+    A -->|"按消息 ID 关联"| DB
+    DB --> D["每日 Markdown、JSONL、Manifest"]
+    DB --> H["本地 HTML 阅读与统计"]
+    DB --> R["检索 Markdown 正文与目录"]
+    R -->|"增量上传并校验"| G["私有 Google Drive"]
+    G --> C["ChatGPT / Gemini 的 Drive 连接器"]
+```
+
+启用 LLM 时，构建器把聊天片段交给配置的模型生成话题边界和导航信息；关闭后使用本地规则。两种方式都从归档消息生成检索正文。
 
 ## 开始使用
 
 在 Windows PowerShell 中获取源码：
 
 ```powershell
-git clone https://github.com/hellokiaqi/WeChatTrace.git
-cd WeChatTrace
+git clone https://github.com/hellokiaqi/ChatTrace.git
+cd ChatTrace
 ```
 
 1. 按 [安装与首次配置](docs/setup.md) 创建虚拟环境，确认好友身份，完成本地试读与 Drive 授权。
