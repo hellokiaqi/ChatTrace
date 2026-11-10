@@ -40,8 +40,3 @@ wechat-auth 使用项目的只读账号适配器获取本地密钥，写入当�
 复制 `.env.example` 为 `.env`。配置启用标志、OpenAI-compatible URL、模型名和密钥，或将 CHATTRACE_LLM_ENABLED 设为 false 使用本地规则。所有模型字段仅用于检索导航。
 
 执行 `.\run.ps1 update` 后查看本地阅读入口以及云端 01_Retrieval_Markdown。确认部署结果后，在配置中将 `live_acceptance_confirmed` 设为 true，选择 `schedule_time`（默认北京时间 04:00），执行 `.\run.ps1 schedule install`。
-
-
-## 桌面操作台
-
-完成首次配置后，双击项目根目录的 ChatTrace.cmd。选择微信或 QQ，点击“立即同步”。操作台使用项目虚拟环境执行同一个 update 命令。同步在独立进程中运行，关闭窗口后仍会继续。阶段和最近结果来自 update-runs，消息总数和待补媒体条数来自本地 SQLite。时间按北京时间显示。使用“聊天记录”和“聊天统计”打开已有的本地阅读页面；首次生成前，这两个入口不可用。
