@@ -20,6 +20,10 @@ START="""# ChatTrace 正式检索入口
 
 先查 01_CATALOG，按时间或话题打开所列正式 Retrieval 文档。每卷可跨日期并包含多个 Topic Segment。标题、关键词及描述用于导航；回答时读取 [原始聊天]，引用时间、发送者与稳定消息 ID，并按需展开相邻上下文。
 正式检索的原文来源仅限目录所列正文。Human Archive 和分析记录用于其他用途。检索未命中时报告未找到；已导入消息的导出数量与微信全历史覆盖分别核验。无法确认的事项请明确标注。"""
+def start_here(config):
+    return START.replace('微信全历史','QQ 全历史') if config.get('reader')=='qq-export' else START
+
+
 def write(path, data):
     data=data.encode('utf-8')
     if not path.exists() or path.read_bytes()!=data:
@@ -81,7 +85,7 @@ def human(archive, root, rows,zone):
     write(root/'index.html',header+'<h1>聊天归档</h1><p><a href="statistics.html">双方聊天统计</a></p>'+''.join(index))
 
 
-def document(parts, number, lookup, zone, namespace, contact):
+def document(parts, number, lookup, zone, namespace, contact, platform='WeChat'):
     ids = [mid for part in parts for mid in part['ids']]
     first, last = lookup[ids[0]], lookup[ids[-1]]
     titles = list(dict.fromkeys(s['meta']['title'] for s in parts))
@@ -92,7 +96,7 @@ def document(parts, number, lookup, zone, namespace, contact):
     name = f'CT-R-{dates[0]}-{dates[1]}-{number:02}｜{caption}'
     words = list(dict.fromkeys(w for i in range(6) for s in parts for w in s['meta']['keywords'][i:i+1]))[:8]
     return dict(key=f"CT-R-{namespace}-{first['id']}",name=name,filename=name+'.md',namespace=namespace,
-                contact=contact,anchor=first['id'],start=stamp(first,zone),end=stamp(last,zone),
+                **({'platform':'QQ'} if platform=='QQ' else {}),contact=contact,anchor=first['id'],start=stamp(first,zone),end=stamp(last,zone),
                 ids=ids,sessions=list(parts),keywords=words)
 
 
@@ -100,9 +104,9 @@ def render(doc, lookup, zone):
     ids = doc['ids']
     titles = list(dict.fromkeys(s['meta']['title'] for s in doc['sessions']))
     lines = ['# '+doc['name'],'','## 文档信息','',f"文档ID：{doc['key']}",f"namespace：{doc['namespace']}",
-             '来源：ChatTrace / WeChat',f"参与者：我、{doc['contact']}",f"起止时间：{doc['start']} — {doc['end']}",
+             f"来源：ChatTrace / {doc.get('platform','WeChat')}",f"参与者：我、{doc['contact']}",f"起止时间：{doc['start']} — {doc['end']}",
              f'消息数量：{len(ids)}',f'首条消息：{ids[0]}',f'末条消息：{ids[-1]}',
-             '覆盖状态：本卷覆盖已导入范围；微信全历史未验证。','','## 文档级检索关键词','',
+             '覆盖状态：本卷覆盖已导入范围；'+('QQ' if doc.get('platform')=='QQ' else '微信')+'全历史未验证。','','## 文档级检索关键词','',
              '关键词：'+'、'.join(doc['keywords']),'主要话题：'+'；'.join(titles),'','## 话题导航','']
     body = []
     for i,s in enumerate(doc['sessions'],1):
@@ -120,10 +124,10 @@ def render(doc, lookup, zone):
     return '\n'.join(lines)+'\n## 原始聊天\n\n'+'\n\n'.join(body)+'\n'
 
 
-def pack(segments, lookup, zone, namespace, contact, soft, hard):
+def pack(segments, lookup, zone, namespace, contact, soft, hard, platform='WeChat'):
     docs, parts = [], []
     def measure(candidate):
-        d = document(candidate,len(docs)+1,lookup,zone,namespace,contact)
+        d = document(candidate,len(docs)+1,lookup,zone,namespace,contact,platform)
         d['chars'] = len(render(d,lookup,zone))
         return d
     def finish():
@@ -168,7 +172,7 @@ def pack(segments, lookup, zone, namespace, contact, soft, hard):
         if left['end']!='时间未知' and right['start']!='时间未知':
             pause = datetime.fromisoformat(right['start']) - datetime.fromisoformat(left['end'])
             if pause.total_seconds() <= 90*60:
-                joined = document(left['sessions']+right['sessions'],len(docs)-1,lookup,zone,namespace,contact)
+                joined = document(left['sessions']+right['sessions'],len(docs)-1,lookup,zone,namespace,contact,platform)
                 joined['chars'] = len(render(joined,lookup,zone))
                 if joined['chars']<=hard:
                     docs[-2:] = [joined]
@@ -176,7 +180,8 @@ def pack(segments, lookup, zone, namespace, contact, soft, hard):
 
 
 def catalog(docs, remote):
-    entries = ['# ChatTrace 正式检索目录｜已导入消息；微信历史覆盖未验证']
+    label = 'QQ' if docs and docs[0].get('platform')=='QQ' else '微信'
+    entries = ['# ChatTrace 正式检索目录｜已导入消息；'+label+'历史覆盖未验证']
     for d in docs:
         titles = list(dict.fromkeys(s['meta']['title'] for s in d['sessions']))
         entries.append('\n'.join(['## '+d['name'],'',d['key'],f"{d['start']} — {d['end']} · {len(d['ids'])} 条 · {d['ids'][0]} — {d['ids'][-1]}",
@@ -211,7 +216,7 @@ def inspect_view(archive, folder):
             active_block, previous_topic = s['block_id'], s['segment_id']
     names = {'01_CATALOG.md','00_START_HERE.md'}
     for n,d in enumerate(docs,1):
-        expected = document(d['sessions'],n,lookup,manifest['zone'],manifest['namespace'],archive.config['contact_name'])
+        expected = document(d['sessions'],n,lookup,manifest['zone'],manifest['namespace'],archive.config['contact_name'],'QQ' if archive.config.get('reader')=='qq-export' else 'WeChat')
         if any(d[k]!=v for k,v in expected.items()):
             raise ArchiveError('V4_DOCUMENT_METADATA_MISMATCH')
         names.add(d['filename'])
@@ -219,7 +224,7 @@ def inspect_view(archive, folder):
         body = render(d,lookup,manifest['zone'])
         if raw!=body.encode() or len(body)!=d['chars'] or len(body)>manifest['hard_limit'] or d['sha256']!=digest(raw):
             raise ArchiveError('V4_DOCUMENT_MISMATCH')
-    if {p.name for p in folder.glob('*.md')}!=names or (folder/'01_CATALOG.md').read_bytes()!=catalog(docs,{}).encode() or (folder/'00_START_HERE.md').read_bytes()!=START.encode():
+    if {p.name for p in folder.glob('*.md')}!=names or (folder/'01_CATALOG.md').read_bytes()!=catalog(docs,{}).encode() or (folder/'00_START_HERE.md').read_bytes()!=start_here(archive.config).encode():
         raise ArchiveError('V4_NAVIGATION_MISMATCH')
     if any(not (archive.root/a['path']).is_file() for r in rows for a in r['media']):
         raise ArchiveError('V4_MISSING_ASSET')
@@ -276,8 +281,9 @@ def build(archive, enabled=None, refresh=False, preview=False):
     root.mkdir(exist_ok=True)
     sem = Semantic(root,enabled,refresh)
     zone = cfg.get('timezone','Asia/Shanghai')
-    ns = digest(encode(['wechat',cfg['account_id'],cfg['contact_id']]).encode())[:16]
-    docs = pack(topics(rows,sem),lookup,zone,ns,cfg['contact_name'],soft,hard)
+    platform = 'QQ' if cfg['reader']=='qq-export' else 'WeChat'
+    ns = digest(encode([platform.lower(),cfg['account_id'],cfg['contact_id']]).encode())[:16]
+    docs = pack(topics(rows,sem),lookup,zone,ns,cfg['contact_name'],soft,hard,platform)
     stage = Path(tempfile.mkdtemp(dir=archive.root,prefix='build-'))
     try:
         for d in docs:
@@ -287,9 +293,9 @@ def build(archive, enabled=None, refresh=False, preview=False):
         manifest = dict(version=4,schema=2,namespace=ns,zone=zone,soft_limit=soft,hard_limit=hard,
                         input_hash=digest(encode(rows).encode()),model=sem.model,llm_ready=sem.ready,
                         prompt_hash=digest(PROMPT.encode()),documents=docs,
-                        navigation_hash=digest(encode([START,catalog(docs,{})]).encode()))
+                        navigation_hash=digest(encode([start_here(cfg),catalog(docs,{})]).encode()))
         write(stage/'01_CATALOG.md',catalog(docs,{}))
-        write(stage/'00_START_HERE.md',START)
+        write(stage/'00_START_HERE.md',start_here(cfg))
         write(stage/'manifest.json',encode(manifest))
         result = inspect_view(archive,stage)
         target = location(archive,True)

@@ -31,21 +31,22 @@ def task_xml(config, executable=None):
 
 
 def schedule(config, action):
+    name = TASK_NAME+'-QQ' if config['reader']=='qq-export' else TASK_NAME
     if action == 'export':
-        output = Path(config['config_path']).parent / 'private' / 'task.xml'
+        output = Path(config['config_path']).parent / 'private' / (name+'.xml')
         atomic(output, task_xml(config).encode('utf-16'))
         return str(output)
     if action == 'install':
         if config.get('live_acceptance_confirmed') is not True:
             raise ArchiveError('LIVE_ACCEPTANCE_REQUIRED')
         output = schedule(config, 'export')
-        args = ['/Create', '/TN', TASK_NAME, '/XML', output, '/F']
+        args = ['/Create', '/TN', name, '/XML', output, '/F']
     else:
-        args = {'pause': ['/Change', '/TN', TASK_NAME, '/DISABLE'],
-                'resume': ['/Change', '/TN', TASK_NAME, '/ENABLE'],
-                'remove': ['/Delete', '/TN', TASK_NAME, '/F'],
-                'run': ['/Run', '/TN', TASK_NAME],
-                'status': ['/Query', '/TN', TASK_NAME, '/V', '/FO', 'LIST']}[action]
+        args = {'pause': ['/Change', '/TN', name, '/DISABLE'],
+                'resume': ['/Change', '/TN', name, '/ENABLE'],
+                'remove': ['/Delete', '/TN', name, '/F'],
+                'run': ['/Run', '/TN', name],
+                'status': ['/Query', '/TN', name, '/V', '/FO', 'LIST']}[action]
     result = subprocess.run(['schtasks.exe', *args], capture_output=True)
     if result.returncode:
         raise ArchiveError('SCHEDULER_COMMAND_FAILED_' + str(result.returncode))

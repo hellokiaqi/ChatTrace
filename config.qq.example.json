@@ -1,0 +1,18 @@
+{
+  "reader": "qq-export",
+  "account_id": "OWNER_PLATFORM_ID",
+  "contact_id": "FRIEND_PLATFORM_ID",
+  "contact_name": "QQ 好友",
+  "identity_confirmed": false,
+  "qq_export_path": "private/qq-source/chat.json",
+  "archive_root": "private/qq-archive",
+  "inbox": "private/qq-inbox",
+  "timezone": "Asia/Shanghai",
+  "schedule_time": "04:00",
+  "upload_enabled": false,
+  "live_acceptance_confirmed": false,
+  "screenshot_policy": "manual",
+  "auto_capture": false,
+  "client_secret_path": "secrets/client_secret.json",
+  "token_path": "secrets/token.dpapi"
+}

@@ -63,7 +63,7 @@ def load_config(path):
             raise ArchiveError('CONFIG_REQUIRED_' + key.upper())
     if data.get('identity_confirmed') is not True:
         raise ArchiveError('IDENTITY_NOT_CONFIRMED')
-    if data.get('reader') not in ('import', 'wechat-ui', 'wechat-db'):
+    if data.get('reader') not in ('import', 'wechat-ui', 'wechat-db', 'qq-export'):
         raise ArchiveError('UNKNOWN_READER')
     if data['reader'] == 'wechat-db':
         if not all(isinstance(data.get(k), str) and data[k] for k in ('wechat_secret_path', 'contact_username')):
@@ -72,12 +72,14 @@ def load_config(path):
             data.setdefault(key, default)
             if type(data[key]) is not int or data[key] < (0 if key == 'initial_media_samples' else 1):
                 raise ArchiveError('INVALID_READER_RANGE')
+    if data['reader']=='qq-export' and (not isinstance(data.get('qq_export_path'),str) or not data['qq_export_path'] or data.get('auto_capture')):
+        raise ArchiveError('QQ_EXPORT_CONFIGURATION_REQUIRED')
     tz(data.get('timezone', 'Asia/Shanghai'))
     if data.get('screenshot_policy', 'media') not in ('media', 'all', 'manual'):
         raise ArchiveError('INVALID_SCREENSHOT_POLICY')
     if type(data.get('upload_revisions', False)) is not bool:
         raise ArchiveError('INVALID_UPLOAD_REVISIONS')
-    for key in ('archive_root', 'inbox', 'token_path', 'client_secret_path', 'wechat_secret_path'):
+    for key in ('qq_export_path','archive_root', 'inbox', 'token_path', 'client_secret_path', 'wechat_secret_path'):
         if data.get(key):
             data[key] = str((path.parent / data[key]).resolve())
     data['config_path'] = str(path)
@@ -119,6 +121,8 @@ class Archive:
         self.root.mkdir(parents=True, exist_ok=True)
         marker = self.root / '.chattrace.json'
         identity = {k: config[k] for k in ('account_id', 'contact_id')}
+        if config.get('reader')=='qq-export':
+            identity['platform']='qq'
         if marker.exists():
             if json.loads(marker.read_text('utf-8')) != identity:
                 raise ArchiveError('ARCHIVE_IDENTITY_MISMATCH')
@@ -488,6 +492,9 @@ def run_locked(config, no_upload=False, drive_factory=None):
             raise ArchiveError('WECHAT_UI_READER_UNAVAILABLE')
         before_max = archive.db.execute('SELECT coalesce(max(id),0) FROM messages').fetchone()[0]
         checkpoint = None
+        if config['reader']=='qq-export':
+            from .qq_reader import collect as collect_qq
+            collect_qq(config)
         if config['reader'] == 'wechat-db':
             from .wechat_reader import collect
             _, checkpoint = collect(config, archive)

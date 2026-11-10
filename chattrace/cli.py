@@ -51,6 +51,8 @@ def main(argv=None):
             result = initialize(Path(args.config))
         else:
             config = load_config(args.config)
+            if config['reader']=='qq-export' and args.command in ('wechat-auth','capture','capture-link','capture-series'):
+                raise ArchiveError('QQ_CLIENT_ACCESS_UNSUPPORTED')
             if args.command == 'run':
                 if args.backfill and config['reader'] != 'wechat-db':
                     raise ArchiveError('BACKFILL_REQUIRES_WECHAT_DB')

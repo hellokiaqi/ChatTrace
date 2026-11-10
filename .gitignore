@@ -21,3 +21,4 @@ token.json
 *.sqlite-wal
 *.sqlite-shm
 .pytest_cache/
+config.*.local.json

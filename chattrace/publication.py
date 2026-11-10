@@ -4,7 +4,7 @@ import hashlib
 import json
 from .core import ArchiveError, atomic, digest, encode, now
 from .drive import GoogleDrive
-from .retrieval import START,catalog,validate
+from .retrieval import start_here,catalog,validate
 
 MIME='text/markdown'
 
@@ -13,6 +13,7 @@ def sync(archive,dry=False,drive_factory=GoogleDrive):
     root=archive.root/'v4'
     manifest=json.loads((root/'retrieval/manifest.json').read_bytes())
     docs=manifest['documents']
+    intro=start_here(archive.config)
     path=root/'markdown-drive-state.json'
     state=json.loads(path.read_bytes()) if path.exists() else {}
     urls={k:'https://drive.google.com/file/d/'+v['id']+'/view' for k,v in state.items()}
@@ -24,11 +25,11 @@ def sync(archive,dry=False,drive_factory=GoogleDrive):
     if drive and drive.api.files().get(fileId=folder,fields='shared').execute().get('shared'):
         raise ArchiveError('V4_FOLDER_SHARED')
     plan=[]
-    for key,name,body in entries+[('01_CATALOG','01_CATALOG.md',''),('00_START_HERE','00_START_HERE.md',START)]:
+    for key,name,body in entries+[('01_CATALOG','01_CATALOG.md',''),('00_START_HERE','00_START_HERE.md',intro)]:
         if key=='01_CATALOG':
             body=catalog(docs,urls)
         elif key=='00_START_HERE' and '01_CATALOG' in urls:
-            body=START.replace('(01_CATALOG.md)','('+urls['01_CATALOG']+')')
+            body=intro.replace('(01_CATALOG.md)','('+urls['01_CATALOG']+')')
         sha=digest(body.encode())
         row=state.get(key,{})
         action='create' if not row else 'skip' if row.get('sha256')==sha and row.get('name')==name else 'update'
