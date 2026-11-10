@@ -167,14 +167,17 @@ def verified_media(kind,md5,element,root,files,base):
     if not re.fullmatch('[a-f0-9]{32}',md5):
         return None
     paths=[Path(element[k]) for k in ('local_path','filepath') if element[k]]+files.get(md5,[])
+    recovery = (base/'qq-originals').resolve()
+    paths.extend(sorted(recovery.glob(md5+'.*')))
     preview = None
     for path in paths:
         path=path.resolve()
-        if not path.is_relative_to(root.resolve()) or not path.is_file():
+        recovered = path.parent == recovery and path.stem == md5
+        if not (recovered or path.is_relative_to(root.resolve())) or not path.is_file():
             continue
         data=path.read_bytes()
         if hashlib.md5(data).hexdigest()!=md5:
-            if kind in ('sticker','image') and (path.stem.lower().startswith(md5) or str(path)==element['local_path']):
+            if not recovered and kind in ('sticker','image') and (path.stem.lower().startswith(md5) or str(path)==element['local_path']):
                 try:
                     with Image.open(io.BytesIO(data)) as im:
                         ext={'JPEG':'.jpg','PNG':'.png','GIF':'.gif','WEBP':'.webp'}.get(im.format)

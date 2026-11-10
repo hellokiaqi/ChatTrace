@@ -45,3 +45,7 @@ Get-ScheduledTaskInfo -TaskName ChatTrace-Archive-QQ
 config.qq.example.json 用于 QQNT_Export 的 ChatLab 0.0.2 私聊 JSON。按导出的 meta.ownerId 和成员 platformId 核对双方身份。该 JSON 不包含独立媒体原件。详情参见 [导出器源码](https://github.com/Tealina28/QQNT_Export/blob/dev/exporters/chatlab_json.py)。不要混用两种读取器的归档与 inbox。
 
 Windows 密钥匹配方法、消息字段及 MIT 来源见 [第三方声明](../chattrace/vendor/NOTICE.md)。已实测目标私聊记录、重复采集、隐私裁剪截图、原始媒体摘要、引用关系与 Markdown 管线。系统睡眠唤醒、其他 QQ 版本及手机全历史覆盖未验证。
+
+### 手动补回 QQ 媒体原件
+
+将已取得的原件放入此 QQ 联系人的 `inbox/qq-originals/`，按来源 MD5（32 位小写十六进制）和真实文件扩展名命名。运行普通增量更新时，读取器会重试待补消息，按文件内容复核 MD5，再沿用现有资源去重和修订流程。校验失败的文件不作为预览或原件入库。该目录是本地恢复输入，不上传至 Drive。

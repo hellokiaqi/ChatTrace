@@ -76,3 +76,19 @@ class QQNativeTests(unittest.TestCase):
             self.assertEqual([m['source_id'] for m in batch['messages']],['2','1'])
             self.assertTrue(checkpoint['full_inventory'])
             archive.db.close()
+
+    def test_recovered_original_rejects_wrong_content(self):
+        from chattrace.qq_native import verified_media
+        with tempfile.TemporaryDirectory() as name:
+            base = Path(name)
+            recovery = base/'qq-originals'
+            recovery.mkdir()
+            data = b'recovered test file'
+            md5 = hashlib.md5(data).hexdigest()
+            path = recovery/(md5+'.bin')
+            path.write_bytes(b'wrong')
+            element = parse_content(b'')
+            self.assertIsNone(verified_media('file',md5,element,base/'qq',{},base))
+            path.write_bytes(data)
+            asset = verified_media('file',md5,element,base/'qq',{},base)
+            self.assertEqual((base/asset['path']).read_bytes(),data)
