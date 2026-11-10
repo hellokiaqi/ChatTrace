@@ -92,3 +92,23 @@ class QQNativeTests(unittest.TestCase):
             path.write_bytes(data)
             asset = verified_media('file',md5,element,base/'qq',{},base)
             self.assertEqual((base/asset['path']).read_bytes(),data)
+
+    def test_online_recovery_rejects_wrong_bytes_then_caches_verified_image(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from chattrace.qq_native import verified_media
+        with tempfile.TemporaryDirectory() as name:
+            base = Path(name)
+            stream = io.BytesIO()
+            Image.new('RGB',(2,2)).save(stream,'PNG')
+            data = stream.getvalue()
+            md5 = hashlib.md5(data).hexdigest()
+            e = dict(local_path=None,filepath=None,filesize=len(data),cdn_url='/download?id=test')
+            attempted = set()
+            responses = [SimpleNamespace(status_code=200,content=b'x'*len(data)),
+                         SimpleNamespace(status_code=200,content=data)]
+            with patch('chattrace.qq_native.requests.get',side_effect=responses) as get:
+                asset = verified_media('image',md5,e,base/'qq',{},base,attempted)
+                self.assertEqual((base/asset['path']).read_bytes(),data)
+                self.assertEqual(verified_media('image',md5,e,base/'qq',{},base,attempted),asset)
+                self.assertEqual(get.call_count,2)

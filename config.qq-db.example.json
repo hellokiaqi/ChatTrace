@@ -15,6 +15,7 @@
   "client_secret_path": "secrets/client_secret.json",
   "token_path": "secrets/token.dpapi",
   "qq_account_dir": "C:/Users/YOUR_WINDOWS_USER/Documents/Tencent Files/YOUR_QQ_NUMBER",
+  "qq_media_download": true,
   "qq_secret_path": "secrets/qq.dpapi",
   "initial_message_limit": 10,
   "overlap_hours": 72

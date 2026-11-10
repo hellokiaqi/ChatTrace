@@ -3,6 +3,7 @@ import hashlib
 import json
 import re
 import io
+import requests
 from PIL import Image
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -90,7 +91,8 @@ def collect(config, archive):
             prefix=path.name[:32].lower()
             if prefix in names and path.is_file():
                 files[prefix].append(path)
-    messages=[message(row,elements,error,peer,owners,media_root,files,base) for row,elements,error in parsed]
+    attempted = set() if config.get('qq_media_download', True) else None
+    messages=[message(row,elements,error,peer,owners,media_root,files,base,attempted) for row,elements,error in parsed]
     for row,item in zip(rows,messages):
         if item['type']=='quote' and not item['reply_to']:
             item['reply_to']=refs.get(row['id'])
@@ -105,7 +107,7 @@ def collect(config, archive):
     return checkpoint
 
 
-def message(row,elements,error,peer,owners,media_root,files,base):
+def message(row,elements,error,peer,owners,media_root,files,base,attempted=None):
     text=[]
     parts=[]
     media=[]
@@ -134,7 +136,7 @@ def message(row,elements,error,peer,owners,media_root,files,base):
                 kind='sticker'
             h=(e['md5_hex'] or e['sticker_hex'] or '').lower()
             part['md5']=h
-            asset=verified_media(kind,h,e,media_root,files,base)
+            asset=verified_media(kind,h,e,media_root,files,base,attempted)
             if asset:
                 media.append(asset)
                 part['asset']=asset['path']
@@ -163,7 +165,7 @@ def message(row,elements,error,peer,owners,media_root,files,base):
                 quoted_text=quoted,reply_to=reference)
 
 
-def verified_media(kind,md5,element,root,files,base):
+def verified_media(kind,md5,element,root,files,base,attempted=None):
     if not re.fullmatch('[a-f0-9]{32}',md5):
         return None
     paths=[Path(element[k]) for k in ('local_path','filepath') if element[k]]+files.get(md5,[])
@@ -194,6 +196,9 @@ def verified_media(kind,md5,element,root,files,base):
         if not (base/rel).exists():
             atomic(base/rel,data)
         return {'kind':kind,'path':rel}
+    if attempted is not None and kind in ('image','sticker'):
+        if download_original(md5, element, recovery, attempted):
+            return verified_media(kind,md5,element,root,files,base)
     if preview:
         data,ext=preview
         rel='assets/'+digest(data)+ext
@@ -201,3 +206,33 @@ def verified_media(kind,md5,element,root,files,base):
             atomic(base/rel,data)
         return {'kind':'image_preview','path':rel}
     return None
+
+
+def download_original(md5, element, recovery, attempted):
+    urls = []
+    path = element.get('cdn_url') or ''
+    if path.startswith('/download?'):
+        urls.append('https://multimedia.nt.qq.com.cn' + path)
+    urls.append(f'https://gchat.qpic.cn/gchatpic_new/0/0-0-{md5.upper()}/0')
+    for url in urls:
+        if url in attempted:
+            continue
+        attempted.add(url)
+        try:
+            response = requests.get(url, timeout=(5,15), allow_redirects=False)
+            if response.status_code != 200:
+                continue
+            data = response.content
+            if element.get('filesize') and len(data) != element['filesize']:
+                continue
+            if hashlib.md5(data).hexdigest() != md5:
+                continue
+            with Image.open(io.BytesIO(data)) as picture:
+                suffix = {'JPEG':'.jpg','PNG':'.png','GIF':'.gif','WEBP':'.webp','BMP':'.bmp'}.get(picture.format)
+                picture.verify()
+        except (requests.RequestException,OSError,SyntaxError):
+            continue
+        if suffix:
+            atomic(recovery/(md5+suffix),data)
+            return True
+    return False
